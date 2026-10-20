@@ -1,0 +1,33 @@
+# 과정 정보
+- 과정명: {{ course }}
+{% if subject_tag %}- 과목/주제: {{ subject_tag }}
+{% endif %}{% if objectives %}- 학습목표:
+{{ objectives }}
+{% endif %}- 차시: {{ chasi }}
+
+# 원고
+{% if prev_text %}## [p.{{ prev_label }}] (앞 페이지 — 문맥 참고용)
+{{ prev_text }}
+
+{% endif %}## [p.{{ label }}] ★ 출제 대상 페이지
+{{ text }}
+{% if next_text %}
+## [p.{{ next_label }}] (뒤 페이지 — 문맥 참고용)
+{{ next_text }}
+{% endif %}
+
+# 출제 규칙 요약
+- 모든 문항은 ★ 출제 대상 페이지의 내용을 중심으로 출제한다. 앞뒤 페이지는 문장이 페이지를 넘어 이어질 때만 근거로 쓴다.
+- 근거 인용문은 위 원고에서 그대로 복사한다.
+
+# 슬롯 명세 ({{ slots|length }}개 — 모두 출제)
+{% for s in slots %}- {{ s.sid }}: {{ s.spec }}
+{% endfor %}
+{% if avoid %}
+# 회피 목록 (이미 출제된 문항 — 같은 판단 포인트·같은 문장 금지)
+{% for a in avoid %}- {{ a }}
+{% endfor %}{% endif %}
+{% if feedback %}
+# 재출제 사유 (이전 시도가 아래 이유로 폐기됨 — 반드시 고쳐서 다시 출제)
+{% for f in feedback %}- {{ f }}
+{% endfor %}{% endif %}

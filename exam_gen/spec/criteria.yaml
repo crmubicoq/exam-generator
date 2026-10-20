@@ -1,0 +1,63 @@
+# 출제 기준 — 지침·유의사항·스킬가이드 v8에서 옮긴 숫자 규칙과 루브릭.
+# 대시보드 기본값과 검증 임계값은 모두 여기서 읽는다.
+
+defaults:
+  total: 300
+  pool_extra_pct: 5            # 유의사항 "Pool은 조금 여유있게"
+  difficulty_pct: {최상: 5, 상: 15, 중: 60, 하: 20}
+  type_pct: {mcq: 50, ox: 30, short: 20}
+  mcq_positive_pct: 20         # 지침: 옳은 것 고르기 20% / 옳지 않은 것 고르기 80%
+  combo_pct: 10                # 선다형 중 ㄱㄴㄷㄹ 조합형 비율
+  score: 5
+  scoring: 시스템 자동채점
+  numbering: continuous        # continuous(양식 연번) | per_type(지침 유형별)
+  subject_prefix: false
+  max_retries: 3
+  workers: 3
+
+type_names: {mcq: 선다형, ox: 진위형, short: 단답형}
+type_order: [mcq, ox, short]
+difficulty_levels: [최상, 상, 중, 하]
+
+difficulty_rubric:
+  하: 원고에 명시된 정의·분류·용어를 그대로 확인하는 1단계 문항. 원고 한 문장으로 바로 판단할 수 있다.
+  중: 개념 이해 수준. 두 개념의 구분, 특징 비교, 적용 상황 판단 등 원고 1~2개 구절을 이해해야 판단할 수 있다.
+  상: 여러 구절의 내용을 연결하거나, 유사 개념 간 차이를 정확히 구별해야 풀 수 있다. 단순 암기로는 풀기 어렵다.
+  최상: >-
+    다음 중 2가지 이상을 충족한다 — (a) 여러 원고 구절을 종합해 추론 (b) 의도적으로 뒤집은 진술의 판별
+    (c) 수치·비율의 비교 또는 계산 (d) 두 개 이상의 개념 결합 (e) 단순 암기로는 풀 수 없음.
+    단, 지엽적인 내용이나 원고 밖 지식을 요구해서는 안 된다.
+
+trap_types: [정반대, 수치 변형, 주체·객체 뒤바꿈, 일부만 옳음, 다른 항목에 속하는 내용]
+
+# 표현 정확도 (인계 docs/02 5절): 정답 진술에서 원문의 양태 표현을 바꾸면 안 된다.
+modality_groups:
+  의무: ["해야 한다", "하여야 한다", "해야만 한다"]
+  금지: ["해서는 안 된다", "하면 안 된다", "금지된다"]
+  가능: ["할 수 있다", "가능하다"]
+  권고: ["권장한다", "권장된다", "바람직하다"]
+
+absolute_words: [항상, 절대, 절대로, 반드시, 전혀, 언제나, 결코, 오직, 모든]
+
+thresholds:
+  evidence_min_coverage: 0.8   # 인용문 글자 중 원고에서 찾은 비율 (L1 부분 일치 하한)
+  dedup_block: 0.72            # xam-local 실측값
+  dedup_warn: 0.58
+  choice_length_ratio_warn: 3.0
+  page_cap_factor: 2.0         # 페이지당 최대 = 기대값 × 2
+  min_page_chars: 80           # 이보다 글자가 적은 페이지는 기본 제외
+  autostop_evidence_rate: 0.8  # 첫 시도 근거 매칭률이 이 값보다 낮으면 자동 중단
+  autostop_check_after_pages: 3
+
+colors:
+  correct: [1.0, 0.95, 0.0]
+  wrong: [1.0, 0.6, 0.2]
+  label_correct: [0.6, 0.5, 0.0]
+  label_wrong: [0.9, 0.45, 0.0]
+  bg_correct: [1.0, 0.97, 0.85]
+  bg_wrong: [1.0, 0.92, 0.85]
+  opacity: 0.4
+
+fonts:
+  regular: C:/Windows/Fonts/malgun.ttf
+  bold: C:/Windows/Fonts/malgunbd.ttf

@@ -166,7 +166,9 @@ with right:
     kind = ui.TYPE_KO[saved["type"]] + (" 조합형" if saved.get("statements") else "")
     if saved["type"] == "mcq" and not saved.get("statements"):
         kind += f" · {'옳은 것' if saved.get('polarity') == 'positive' else '옳지 않은 것'} 고르기"
-    st.caption(f"{saved.get('chasi')}차시 · {kind} · 난이도 {saved['difficulty']} · 원고 p.{_pages_of(saved)} · "
+    tgt = saved.get("difficulty_target")
+    diff_txt = saved["difficulty"] + (f"(목표 {tgt})" if tgt and tgt != saved["difficulty"] else "")
+    st.caption(f"{saved.get('chasi')}차시 · {kind} · 난이도 {diff_txt} · 원고 p.{_pages_of(saved)} · "
                f"근거 {saved.get('evidence_level') or '없음'} · 시도 {saved['validation'].get('attempts')} · "
                f"생성 {saved['gen'].get('provider')}")
 

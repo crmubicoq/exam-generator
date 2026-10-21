@@ -284,7 +284,10 @@ def check_item(pages: list[dict], item: dict) -> tuple[list[str], list[str]]:
             stmt = statement_text(item, str(ev.get("target")))
             # 선다형 보기는 발문에 이미 나온 수치를 빼고 본다. 진위형은 진술이 곧 발문이므로 빼지 않는다.
             in_stem = numbers_in(item.get("stem", "")) if item["type"] == "mcq" else set()
-            missing = numbers_in(stmt) - numbers_in(ev["quote"]) - in_stem
+            # 인용문에 없어도 근거 페이지 본문(제목·표 머리 등)에 있는 수치는 원고 수치다 — 예: '초기 은퇴기(65~74세)'.
+            # 원고 어디에도 없는 수치(환각)만 막는다.
+            page_nums = numbers_in(" ".join(l["text"] for l in pages[ev["match"]["g"]]["lines"] if not l["margin"]))
+            missing = numbers_in(stmt) - numbers_in(ev["quote"]) - in_stem - page_nums
             if missing:
                 fails.append(f"G2: [{ev.get('target')}] 참 진술의 수치 {sorted(missing)}가 근거에 없음")
 

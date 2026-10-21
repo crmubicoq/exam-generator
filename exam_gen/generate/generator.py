@@ -83,7 +83,7 @@ class Pipeline:
             todo = [s for s in self.slots if s["sid"] not in done_sids and s.get("page") is not None]
             self.slots = [s for s in self.slots if s.get("page") is not None]
             self._process(todo)
-            if self.prog["status"] == "running" and self.opts.get("difficulty_topup", True) \
+            if self.prog["status"] == "running" and self.opts.get("difficulty_topup", False) \
                     and not any(s.get("topup") for s in self.slots):
                 self._topup()
             if self.prog["status"] == "running":
@@ -403,6 +403,7 @@ class Pipeline:
             item["difficulty"] = lv
             item["validation"]["warnings"] = [w for w in item["validation"]["warnings"] if not w.startswith("G5[난이도] 표시")]
             item["validation"]["warnings"].append(f"난이도 재분류: 목표 '{item['difficulty_target']}' → 실제 '{lv}'")
+        review_llm.merge_variants(item)  # 단답형 허용 답안(G5 제안) — 검증 기록 전에 합쳐 내용 해시에 포함
         integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)
         self.p.save_item(item, "auto_accept", {"status": item["status"], "attempts": item["validation"]["attempts"]})

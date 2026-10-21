@@ -49,9 +49,10 @@ REVIEW_BLOCKING = {"answer", "dispute", "choices"}  # fail이면 탈락(보기: 
 REVIEW_SCHEMA = {
     "type": "object", "required": ["results"],
     "properties": {"results": {"type": "array", "items": {
-        "type": "object", "required": ["id", "checks", "assessed_difficulty", "suggestion"],
+        "type": "object", "required": ["id", "checks", "assessed_difficulty", "accept_variants", "suggestion"],
         "properties": {
             "id": _STR,
+            "accept_variants": {"type": "array", "items": _STR},
             "assessed_difficulty": {"type": "string", "enum": ["최상", "상", "중", "하"]},
             "checks": {"type": "array", "items": {"type": "object", "required": ["id", "result", "note"],
                                                   "properties": {"id": {"type": "string", "enum": REVIEW_CHECKS},

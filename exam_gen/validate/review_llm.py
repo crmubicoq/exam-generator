@@ -63,3 +63,22 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
                 warns.append(f"G5 수정안: {r['suggestion'][:300]}")
         verdicts[i] = (fails, warns, r)
     return verdicts
+
+
+def merge_variants(item: dict) -> list[str]:
+    """단답형: G5가 제안한 허용 답안을 short_variants에 합친다. 추가한 표현을 반환(검수 화면·경고에 표시)."""
+    if item.get("type") != "short":
+        return []
+    from ..ingest.pdf_text import normalize
+    cand = [v.strip() for v in (item["validation"].get("G5") or {}).get("accept_variants") or [] if v and v.strip()]
+    have = {normalize(x) for x in [item.get("answer", ""), *(item.get("short_variants") or [])]}
+    new = []
+    for v in cand:
+        if len(v) <= 30 and normalize(v) and normalize(v) not in have:
+            have.add(normalize(v))
+            new.append(v)
+    if new:
+        item["short_variants"] = list(item.get("short_variants") or []) + new
+        item["validation"].setdefault("warnings", []).append(f"허용 답안 자동 추가(검수 시 확인): {', '.join(new)}")
+    return new
+

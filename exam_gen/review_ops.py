@@ -110,6 +110,7 @@ def rerun_llm_gates(project: Project, settings, key: str) -> dict:
     item["validation"]["warnings"] = code_w + w4 + w5
     item["validation"]["llm_stale"] = False
     if not item["validation"]["fails"]:
+        review_llm.merge_variants(item)
         integrity.mark_verified(item)
     else:
         item["validation"].pop("verified", None)

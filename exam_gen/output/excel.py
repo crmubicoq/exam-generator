@@ -70,7 +70,15 @@ def row_values(project, item: dict, opts: dict) -> list:
     prefix = project.meta.get("subject_tag", "") if opts.get("subject_prefix") else ""
     return [item.get("chasi"), type_name(item["type"]), page_cell(project, item), item["no"],
             stem_text(item, prefix), *choices, answer_cell(item), item.get("explanation", ""),
-            opts.get("scoring", "시스템 자동채점"), opts.get("score", 5), None, None, None, None]
+            _scoring(item, opts), opts.get("score", 5), None, None, None, None]
+
+
+def _scoring(item: dict, opts: dict) -> str:
+    """채점기준 열. 단답형은 허용 답안을 함께 적는다(띄어쓰기 차이는 자동 무시)."""
+    base = opts.get("scoring", "시스템 자동채점")
+    if item["type"] == "short" and item.get("short_variants"):
+        return f"{base} (허용 답안: {', '.join(item['short_variants'])})"
+    return base
 
 
 def hidden_values(project, item: dict) -> list:

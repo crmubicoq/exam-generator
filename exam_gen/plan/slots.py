@@ -39,6 +39,52 @@ class SlotError(ValueError):
     pass
 
 
+# 유형별로 실제로 낼 수 있는 난이도 (2026-10-21 Claude 출제 실측: 단답형·진위형 O는 구조상 '하'가 된다)
+#   단답형: 용어 하나를 떠올리는 형태라 하·중까지
+#   진위형: 최상 불가. '상'은 정답을 X로 두어 다른 항목과 바꾼 진술을 판별하게 한다
+ALLOWED = {"mcq": ("최상", "상", "중", "하"), "ox": ("상", "중", "하"), "short": ("중", "하")}
+LEVELS = ("최상", "상", "중", "하")
+
+
+def fit_types(type_counts: dict, diff_counts: dict) -> dict:
+    """난이도별 수량을 직접 정한 경우(추가 출제): 배정이 불가능하면 단답형 → 진위형 순으로 선다형에 자리를 넘긴다."""
+    tc = dict(type_counts)
+    for donor in ("short", "ox"):
+        while True:
+            try:
+                joint_allocation(tc, diff_counts)
+                return tc
+            except SlotError:
+                if tc.get(donor, 0) == 0:
+                    break
+                tc[donor] -= 1
+                tc["mcq"] = tc.get("mcq", 0) + 1
+    joint_allocation(tc, diff_counts)  # 여기까지 오면 선다형만으로도 불가능 — 사유와 함께 오류
+    return tc
+
+
+def joint_allocation(type_counts: dict, diff_counts: dict) -> dict:
+    """어려운 난이도부터, 그 난이도를 낼 수 있는 유형에 남은 수량 비례로 채운다. 불가능하면 SlotError."""
+    cap = dict(type_counts)
+    joint = {(t, d): 0 for t in type_counts for d in LEVELS}
+    for lv in LEVELS:
+        need = diff_counts.get(lv, 0)
+        while need > 0:
+            avail = {t: cap[t] for t in type_counts if lv in ALLOWED.get(t, LEVELS) and cap[t] > 0}
+            if not avail:
+                names = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
+                ok = [names[t] for t in type_counts if lv in ALLOWED.get(t, LEVELS)]
+                raise SlotError(f"'{lv}' {diff_counts[lv]}문항을 배정할 수 없다 — '{lv}'은(는) {', '.join(ok)}만 낼 수 있다. "
+                                "난이도 비율을 낮추거나 선다형 비율을 높이세요.")
+            share = largest_remainder(min(need, sum(avail.values())), avail)
+            for t, v in share.items():
+                v = min(v, cap[t])
+                joint[(t, lv)] += v
+                cap[t] -= v
+                need -= v
+    return joint
+
+
 def check_options(opts: dict, n: int | None = None, difficulty_counts: dict | None = None) -> list[str]:
     """설정끼리 모순되면 사유 목록을 반환한다 (Codex C12·C13). 화면과 build_slots가 같은 검사를 쓴다."""
     out = []
@@ -51,6 +97,15 @@ def check_options(opts: dict, n: int | None = None, difficulty_counts: dict | No
                    "— 조합형은 '옳은 것을 모두 고른 것'이라 옳은 것 고르기에 포함된다.")
     if difficulty_counts is not None and n is not None and sum(difficulty_counts.values()) != n:
         out.append(f"난이도별 수량 합계({sum(difficulty_counts.values())})와 페이지 할당 합계({n})가 다르다.")
+    elif n and not out:
+        try:
+            tc = largest_remainder(n, opts["type_pct"])
+            if difficulty_counts:
+                fit_types(tc, difficulty_counts)
+            else:
+                joint_allocation(tc, largest_remainder(n, opts["difficulty_pct"]))
+        except SlotError as e:
+            out.append(str(e))
     return out
 
 
@@ -64,15 +119,14 @@ def build_slots(pages: list[dict], page_counts: dict[int, int], opts: dict,
     problems = check_options(opts, n, difficulty_counts)
     if problems:
         raise SlotError(" / ".join(problems))
+    type_counts = largest_remainder(n, opts["type_pct"])
     if difficulty_counts is None:
         difficulty_counts = largest_remainder(n, opts["difficulty_pct"])
-    type_counts = largest_remainder(n, opts["type_pct"])
+    else:
+        type_counts = fit_types(type_counts, difficulty_counts)
 
-    # 유형 × 난이도 결합 분포
-    joint_w = {(t, d): type_counts[t] * difficulty_counts.get(d, 0)
-               for t in c["type_order"] for d in c["difficulty_levels"]}
-    joint = largest_remainder(n, joint_w)
-    _fix_margins(joint, type_counts, difficulty_counts)
+    # 유형 × 난이도 결합 분포 (유형별 허용 난이도 안에서)
+    joint = joint_allocation(type_counts, difficulty_counts)
     seq = _spread(joint, n, rng)
 
     by_g = {p["g"]: p for p in pages}
@@ -103,39 +157,16 @@ def build_slots(pages: list[dict], page_counts: dict[int, int], opts: dict,
     for s, a in zip(mcq, _blocks(["1", "2", "3", "4"], len(mcq), rng)):
         s["answer"] = a
     ox = [s for s in slots if s["type"] == "ox"]
-    for s, a in zip(ox, _blocks(["O", "X"], len(ox), rng)):
+    hard = [s for s in ox if s["difficulty"] in ("상", "최상")]
+    for s in hard:
+        s["answer"] = "X"  # 상: 다른 항목과 바꾼 진술을 판별 — 맞는 문장 하나(O)는 구조상 '하'가 된다
+    rest = [s for s in ox if s not in hard]
+    x_left = max(len(ox) // 2 - len(hard), 0)
+    pool = ["X"] * x_left + ["O"] * (len(rest) - x_left)
+    rng.shuffle(pool)
+    for s, a in zip(rest, pool):
         s["answer"] = a
     return slots
-
-
-def _fix_margins(joint: dict, type_counts: dict, diff_counts: dict):
-    """반올림으로 생긴 유형·난이도 주변 합계 오차를 1개씩 옮겨 맞춘다."""
-    for _ in range(50):
-        tsum = {t: sum(v for (tt, _), v in joint.items() if tt == t) for t in type_counts}
-        dsum = {d: sum(v for (_, dd), v in joint.items() if dd == d) for d in diff_counts}
-        t_over = [t for t in tsum if tsum[t] > type_counts[t]]
-        t_under = [t for t in tsum if tsum[t] < type_counts[t]]
-        d_over = [d for d in dsum if dsum[d] > diff_counts.get(d, 0)]
-        d_under = [d for d in dsum if dsum[d] < diff_counts.get(d, 0)]
-        if not (t_over or d_over):
-            return
-        moved = False
-        for to in t_over or list(type_counts):
-            for do in d_over or list(diff_counts):
-                if joint.get((to, do), 0) <= 0:
-                    continue
-                tu = t_under[0] if t_under else to
-                du = d_under[0] if d_under else do
-                if (tu, du) == (to, do):
-                    continue
-                joint[(to, do)] -= 1
-                joint[(tu, du)] = joint.get((tu, du), 0) + 1
-                moved = True
-                break
-            if moved:
-                break
-        if not moved:
-            return
 
 
 def summarize(slots: list[dict]) -> dict:

@@ -65,3 +65,14 @@ def test_strict_schema_for_codex():
     assert item["additionalProperties"] is False and set(item["required"]) == set(item["properties"])
     ev = item["properties"]["evidence"]["items"]
     assert ev["additionalProperties"] is False
+
+
+def test_short_answer_variants_merge_and_excel_scoring():
+    from exam_gen.output.excel import _scoring
+    from exam_gen.validate.review_llm import merge_variants
+    item = {"type": "short", "answer": "보장 리모델링", "short_variants": ["보장리모델링"],
+            "validation": {"G5": {"accept_variants": ["보험 리모델링", "보장 리모델링", " ", "보장 재설계"]}, "warnings": []}}
+    assert merge_variants(item) == ["보험 리모델링", "보장 재설계"]  # 기존·중복·빈 값 제외
+    assert any("허용 답안 자동 추가" in w for w in item["validation"]["warnings"])
+    assert "보험 리모델링" in _scoring(item, {"scoring": "시스템 자동채점"})
+    assert merge_variants({"type": "ox", "validation": {}}) == []

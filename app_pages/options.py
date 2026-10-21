@@ -7,6 +7,7 @@ import streamlit as st
 
 from exam_gen import ui
 from exam_gen.config import criteria
+from exam_gen.cost import estimate
 from exam_gen.generate.generator import start_batch
 from exam_gen.llm import settings as llm_settings
 from exam_gen.plan.coverage import allocate, largest_remainder
@@ -60,9 +61,12 @@ with st.container(border=True):
         numbering = c3.selectbox("문항번호", ["continuous", "per_type"], index=["continuous", "per_type"].index(opts["numbering"]),
                                  format_func=lambda x: {"continuous": "전체 연번(양식)", "per_type": "유형별 1번부터(지침)"}[x])
         prefix = st.checkbox("문항 앞에 [과목/주제명] 붙이기 (유의사항 권고)", value=bool(opts["subject_prefix"]))
+        topup = st.checkbox("난이도 보충 출제 — 실제 난이도(검수 판정)가 목표보다 모자라면 배치 끝에 한 번 더 출제",
+                            value=bool(opts.get("difficulty_topup", False)),
+                            help="실측(30문항): 보충 14문항 중 8문항이 다시 '하'로 판정되어 효과는 낮고 비용은 약 47% 늘었다. 기본은 끔.")
 
 new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct": pos, "combo_pct": combo,
-            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix}
+            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup}
 
 # ---------- 수량과 페이지 할당 ----------
 st.subheader(":material/grid_view: 수량과 페이지 할당")
@@ -136,12 +140,14 @@ if n and not problems:
     _mix(c[1], "난이도 구성", [(k, k) for k in LV], sm["difficulty"])
     _mix(c[2], "유형 구성", [(k, ui.TYPE_KO[k]) for k in C["type_order"]], sm["type"])
     s = llm_settings.load()
-    chunks = sum(math.ceil(v / max(s.chunk_size, 1)) for v in sm["pages"].values())
-    est = int((chunks + 2 * len(sm["pages"])) * 1.4)
     pos_txt = " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in sorted(sm["answer"].items()) if k.isdigit())
-    st.caption(f"선다형 정답 위치 {pos_txt} · "
-               f"진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · 조합형 {sm['combo']} · "
-               f"예상 LLM 호출 약 {est}회(재출제 포함 추정) · 공급자: {llm_settings.PROVIDERS[s.provider]}")
+    st.caption(f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
+               f"조합형 {sm['combo']} · 유형별 난이도: 단답형은 하·중, 진위형은 상까지(상은 정답 X)")
+    est = estimate(s, sm["total"])
+    cost_txt = (f"구독 사용량에서 차감 (API로 환산하면 약 ${est['usd']})" if est["subscription"]
+                else f"약 ${est['usd']}")
+    st.info(f"예상 소요 약 {est['minutes']}분 · 비용 {cost_txt} · 공급자 {' / '.join(sorted(set(s.provider_for(r) for r in ('generate', 'solve', 'review'))))} "
+            f"— 근거: {est['basis']}. 재출제가 많으면 늘어난다.", icon=":material/payments:")
 
 # ---------- 시작 ----------
 if not p.page_map_ready():

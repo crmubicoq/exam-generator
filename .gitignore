@@ -6,3 +6,10 @@ __pycache__/
 data/settings.json
 projects/
 *.tmp
+
+# 원고 파일은 저장소에 올리지 않는다 — 원고/ 폴더에 둔다
+원고/
+*.hwp
+*.hwpx
+*.ppt
+*.pptx

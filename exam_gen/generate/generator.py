@@ -70,7 +70,7 @@ class Pipeline:
     def run(self):
         RUNNING[(self.p.slug, self.batch)] = self
         self.p.set_batch_status(self.batch, "running")
-        self.p.log("batch_start", {"slots": len(self.slots), "provider": self.s.provider,
+        self.p.log("batch_start", {"slots": len(self.slots), "providers": {r: self.s.provider_for(r) for r in ("generate", "solve", "review")},
                                    "model": self.s.model_generate, "prompt_version": PROMPT_VERSION}, batch=self.batch)
         try:
             done_sids = {it["slot"]["sid"] for it in self.p.items(batch=self.batch)}
@@ -247,8 +247,10 @@ class Pipeline:
             "key_point": r.get("key_point", ""), "difficulty_basis": r.get("difficulty_basis", ""),
             "status": None, "history": [],
             "validation": {"attempts": attempt, "fails": [], "warnings": []},
-            "gen": {"provider": self.s.provider, "model": self.s.model_generate, "solver": self.s.model_solve,
-                    "reviewer": self.s.model_review, "prompt_version": PROMPT_VERSION,
+            "gen": {"provider": self.s.provider_for("generate"), "model": self.s.model_generate,
+                    "solver_provider": self.s.provider_for("solve"), "solver": self.s.model_solve,
+                    "reviewer_provider": self.s.provider_for("review"), "reviewer": self.s.model_review,
+                    "prompt_version": PROMPT_VERSION,
                     "manuscript": self.p.manuscript_hash(), "at": now()},
         }
         if s["type"] != "mcq":

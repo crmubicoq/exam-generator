@@ -8,14 +8,18 @@
 setup.bat      # 처음 한 번: 가상환경과 패키지 설치
 run.bat        # http://localhost:8620
 ```
-LLM은 사이드바 **LLM 설정**에서 고른다.
+LLM은 사이드바 **LLM 설정**에서 고른다. 생성, G4 독립 풀이, G5 검수마다 공급자를 다르게 지정할 수 있다.
+예를 들어 생성은 Claude, G4는 Codex로 두면 회사가 다른 모델이 정답을 교차 검증한다.
 
-| 공급자 | 용도 |
-|---|---|
-| 데모(mock) | LLM 없이 원고 문장으로 모의 문항을 만든다. 화면 흐름 확인용이며 납품에 쓰지 않는다 |
-| Anthropic API | API 키 |
-| 사내 LiteLLM | OpenAI 호환 주소와 키 |
-| Claude Agent SDK | 이 PC에 로그인된 Claude Code 구독을 쓴다 |
+| 공급자 | 인증 | 비고 |
+|---|---|---|
+| 데모(mock) | 없음 | LLM 없이 모의 문항을 만든다. 화면 흐름 확인용이며 납품에 쓰지 않는다 |
+| Claude 구독 로그인 | OAuth: Claude Code `/login` | Claude Agent SDK. 호출당 약 $0.04~0.1 |
+| Codex 구독 로그인 | OAuth: 터미널 `codex login`(ChatGPT 계정) | `codex exec --output-schema`. 구독 사용량만 쓴다 |
+| Anthropic API | API 키 | 키는 Windows 자격 증명 저장소에 보관된다 |
+| 사내 LiteLLM | 주소 + API 키 | OpenAI 호환. 키는 자격 증명 저장소에 보관된다 |
+
+'연결·로그인 확인' 버튼으로 각 공급자의 로그인 상태를 확인한다. 구독 로그인 토큰은 각 CLI가 관리하며, 이 툴은 저장하지 않는다.
 
 ## 흐름
 1. **원고 등록**: 업로드 → 책 쪽수 매핑 확인(확정 전에는 출제 불가) → 페이지별 차시·출제 제외 → 학습목표

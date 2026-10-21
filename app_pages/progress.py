@@ -97,7 +97,7 @@ counts = Counter(it["page"] for it in good)
 cov = coverage_stats(p.pages, counts)
 df = pd.DataFrame([{"책 쪽수": x["label"], "문항 수": counts.get(x["g"], 0),
                     "기대값": round(cov["expected"].get(x["g"], 0), 1)} for x in p.pages if not x["excluded"]])
-st.bar_chart(df.set_index("책 쪽수"), height=240, stack=False)
+ui.bar_chart(df, "책 쪽수", ["문항 수", "기대값"], stack=False, height=280)
 if cov["zero"]:
     st.error("문항이 없는 페이지: " + ", ".join(p.pages[g]["label"] for g in cov["zero"]) +
              " → 출제 옵션 > '페이지 재출제(강제 할당)'로 보완하세요.")

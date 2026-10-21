@@ -29,6 +29,21 @@ def status_badge(s: str) -> str:
     return f":{color}-badge[:material/{icon}: {STATUS_KO.get(s, s)}]"
 
 
+def bar_chart(df, x: str, cols: list[str], stack: bool = True, height: int = 220):
+    """페이지별 막대그래프. x축 글자를 가로로 쓰고, 페이지가 많아 겹치면 일부 라벨만 보이게 한다."""
+    import altair as alt
+    long = df.melt(id_vars=[x], value_vars=cols, var_name="구분", value_name="문항")
+    enc = dict(
+        x=alt.X(f"{x}:N", sort=list(df[x]), title=None, axis=alt.Axis(labelAngle=0, labelOverlap=True)),
+        y=alt.Y("문항:Q", stack="zero" if stack else None, title=None),
+        color=alt.Color("구분:N", sort=cols, legend=alt.Legend(orient="top", direction="horizontal", title=None)),
+        tooltip=[alt.Tooltip(f"{x}:N"), alt.Tooltip("구분:N"), alt.Tooltip("문항:Q", format=".1f")],
+    )
+    if not stack:
+        enc["xOffset"] = alt.XOffset("구분:N", sort=cols)
+    st.altair_chart(alt.Chart(long).mark_bar().encode(**enc).properties(height=height), use_container_width=True)
+
+
 def current_project() -> Project | None:
     slug = st.session_state.get("project")
     return Project(slug) if slug in list_projects() else None

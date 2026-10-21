@@ -105,7 +105,7 @@ if forced:
     elif diff_counts is not None and sum(diff_counts.values()) != n:
         st.error(f"페이지 할당 합계({n})와 난이도별 수량 합계({sum(diff_counts.values())})가 다르다 — 둘 중 하나를 맞추세요.")
 else:
-    st.bar_chart(df.set_index("책 쪽수")[["기존 문항", "이번 출제"]], height=220, stack=True)
+    ui.bar_chart(df, "책 쪽수", ["기존 문항", "이번 출제"], stack=True, height=260)
 
 # ---------- 설정 검사 (Codex C12·C13) ----------
 problems = check_options(new_opts, n if diff_counts is not None else None, diff_counts)
@@ -113,16 +113,33 @@ problems = check_options(new_opts, n if diff_counts is not None else None, diff_
 if n and not problems:
     preview = build_slots(pages, alloc, new_opts, difficulty_counts=diff_counts)
     sm = summarize(preview)
-    c = st.columns(5)
-    c[0].metric("이번 출제 슬롯", sm["total"], border=True)
-    c[1].metric("출제 페이지", len(sm["pages"]), border=True)
-    c[2].metric("페이지당", f"{min(sm['pages'].values())}~{max(sm['pages'].values())}", border=True)
-    c[3].metric("난이도", " / ".join(f"{k}{sm['difficulty'].get(k, 0)}" for k in LV), border=True)
-    c[4].metric("유형", " / ".join(f"{ui.TYPE_KO[k][:2]}{sm['type'].get(k, 0)}" for k in C["type_order"]), border=True)
+    def _card(col, title, cells):
+        """구성 카드: 칸마다 이름·값·보조값을 보여 준다(긴 내용이 잘리지 않게). cells = [(이름, 값, 보조값)]"""
+        with col.container(border=True, height="stretch"):
+            st.caption(title)
+            for sc, (name, val, sub) in zip(st.columns(len(cells)), cells):
+                sc.markdown(f"<div style='text-align:center;line-height:1.3'><span style='font-size:0.8em;color:#666'>{name}</span>"
+                            f"<br><span style='font-size:1.5em;font-weight:600'>{val}</span>"
+                            f"<br><span style='font-size:0.75em;color:#888'>{sub}</span></div>",
+                            unsafe_allow_html=True)
+
+    def _mix(col, title, labels, counts):
+        tot = sum(counts.values()) or 1
+        _card(col, title, [(name, counts.get(k, 0), f"{counts.get(k, 0) / tot:.0%}") for k, name in labels])
+
+    c = st.columns(3)
+    pc = sm["pages"].values()
+    _card(c[0], "출제 규모", [("출제 슬롯", sm["total"], f"여유 {new_opts.get('pool_extra_pct', 0)}% 포함"
+                                                       if mode == "최초 출제" else "이번 배치"),
+                            ("출제 페이지", len(sm["pages"]), f"전체 {len(elig)}쪽"),
+                            ("페이지당", f"{min(pc)}~{max(pc)}", "문항")])
+    _mix(c[1], "난이도 구성", [(k, k) for k in LV], sm["difficulty"])
+    _mix(c[2], "유형 구성", [(k, ui.TYPE_KO[k]) for k in C["type_order"]], sm["type"])
     s = llm_settings.load()
     chunks = sum(math.ceil(v / max(s.chunk_size, 1)) for v in sm["pages"].values())
     est = int((chunks + 2 * len(sm["pages"])) * 1.4)
-    st.caption(f"선다형 정답 위치 {dict(sorted((k, v) for k, v in sm['answer'].items() if k.isdigit()))} · "
+    pos_txt = " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in sorted(sm["answer"].items()) if k.isdigit())
+    st.caption(f"선다형 정답 위치 {pos_txt} · "
                f"진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · 조합형 {sm['combo']} · "
                f"예상 LLM 호출 약 {est}회(재출제 포함 추정) · 공급자: {llm_settings.PROVIDERS[s.provider]}")
 

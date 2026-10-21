@@ -12,9 +12,8 @@ from exam_gen.llm import settings as llm_settings
 from exam_gen.plan.coverage import allocate, largest_remainder
 from exam_gen.plan.slots import build_slots, check_options, summarize
 
-ui.setup("출제 옵션")
-p = ui.require_project(ui.sidebar())
-st.title("2. 출제 옵션")
+p = ui.require_project(ui.current_project())
+ui.header("출제 옵션", "tune", "난이도·유형 비율과 페이지 할당을 정하고 출제를 시작한다.")
 C = criteria()
 LV = C["difficulty_levels"]
 meta = p.meta
@@ -33,23 +32,23 @@ mode = st.radio("출제 종류", ["최초 출제", "추가 출제", "페이지 �
 
 # ---------- 공통 비율 ----------
 with st.container(border=True):
-    st.markdown("**난이도 비율 (%)** — 합계 100")
+    st.markdown(":material/signal_cellular_alt: **난이도 비율 (%)** — 합계 100")
     cols = st.columns(4)
     dpct = {lv: cols[i].number_input(lv, 0, 100, int(opts["difficulty_pct"].get(lv, 0)), key=f"d_{lv}") for i, lv in enumerate(LV)}
     dsum = sum(dpct.values())
     (st.success if dsum == 100 else st.error)(f"난이도 합계 {dsum}%")
-    with st.expander("난이도 기준(루브릭)"):
+    with st.expander("난이도 기준(루브릭)", icon=":material/menu_book:"):
         for lv in LV:
             st.markdown(f"- **{lv}**: {C['difficulty_rubric'][lv]}")
 
-    st.markdown("**유형 비율 (%)** — 합계 100")
+    st.markdown(":material/category: **유형 비율 (%)** — 합계 100")
     cols = st.columns(3)
     tpct = {t: cols[i].number_input(ui.TYPE_KO[t], 0, 100, int(opts["type_pct"].get(t, 0)), key=f"t_{t}")
             for i, t in enumerate(C["type_order"])}
     tsum = sum(tpct.values())
     (st.success if tsum == 100 else st.error)(f"유형 합계 {tsum}%")
 
-    with st.expander("세부 옵션"):
+    with st.expander("세부 옵션", icon=":material/settings:"):
         c1, c2, c3 = st.columns(3)
         pos = c1.number_input("선다형 '옳은 것 고르기' %", 0, 100, int(opts["mcq_positive_pct"]),
                               help="지침: 옳은 것 20% / 옳지 않은 것 80%")
@@ -66,7 +65,7 @@ new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct"
             "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix}
 
 # ---------- 수량과 페이지 할당 ----------
-st.subheader("수량과 페이지 할당")
+st.subheader(":material/grid_view: 수량과 페이지 할당")
 diff_counts = None
 if mode == "최초 출제":
     c1, c2 = st.columns(2)
@@ -115,11 +114,11 @@ if n and not problems:
     preview = build_slots(pages, alloc, new_opts, difficulty_counts=diff_counts)
     sm = summarize(preview)
     c = st.columns(5)
-    c[0].metric("이번 출제 슬롯", sm["total"])
-    c[1].metric("출제 페이지", len(sm["pages"]))
-    c[2].metric("페이지당", f"{min(sm['pages'].values())}~{max(sm['pages'].values())}")
-    c[3].metric("난이도", " / ".join(f"{k}{sm['difficulty'].get(k, 0)}" for k in LV))
-    c[4].metric("유형", " / ".join(f"{ui.TYPE_KO[k][:2]}{sm['type'].get(k, 0)}" for k in C["type_order"]))
+    c[0].metric("이번 출제 슬롯", sm["total"], border=True)
+    c[1].metric("출제 페이지", len(sm["pages"]), border=True)
+    c[2].metric("페이지당", f"{min(sm['pages'].values())}~{max(sm['pages'].values())}", border=True)
+    c[3].metric("난이도", " / ".join(f"{k}{sm['difficulty'].get(k, 0)}" for k in LV), border=True)
+    c[4].metric("유형", " / ".join(f"{ui.TYPE_KO[k][:2]}{sm['type'].get(k, 0)}" for k in C["type_order"]), border=True)
     s = llm_settings.load()
     chunks = sum(math.ceil(v / max(s.chunk_size, 1)) for v in sm["pages"].values())
     est = int((chunks + 2 * len(sm["pages"])) * 1.4)
@@ -139,7 +138,7 @@ if llm_settings.load().provider == "mock":
 c1, c2 = st.columns([1, 3])
 if c1.button("옵션 저장"):
     p.update_meta(options=new_opts)
-    st.success("저장했다.")
+    st.toast("저장했다", icon=":material/check:")
 if c2.button("출제 시작", type="primary", disabled=bool(problems)):
     p.update_meta(options=new_opts)
     start = sum(len(b["slots"]) for b in p.batches()) + 1
@@ -148,4 +147,4 @@ if c2.button("출제 시작", type="primary", disabled=bool(problems)):
     kind = {"최초 출제": "initial", "추가 출제": "additional", "페이지 재출제(강제 할당)": "repair"}[mode]
     b = start_batch(p, llm_settings.load(), slots, new_opts, kind=kind)
     st.session_state["batch"] = b
-    st.switch_page("pages/3_출제진행.py")
+    st.switch_page("app_pages/progress.py")

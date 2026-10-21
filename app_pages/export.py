@@ -7,9 +7,8 @@ import streamlit as st
 from exam_gen import ui
 from exam_gen.output import evidence_pdf, excel, numbering
 
-ui.setup("출력")
-p = ui.require_project(ui.sidebar())
-st.title("5. 출력")
+p = ui.require_project(ui.current_project())
+ui.header("출력", "download", "승인된 문항으로 양식 엑셀과 근거PDF를 만든다.")
 items = p.items()
 c = Counter(it["status"] for it in items)
 st.write(f"승인 {c.get('approved', 0)} · 자동통과 {c.get('auto_pass', 0)} · 경고 {c.get('warn', 0)} · "
@@ -40,7 +39,6 @@ if st.session_state.get("xlsx"):
     path = st.session_state["xlsx"]
     st.download_button("엑셀 다운로드", open(path, "rb").read(), file_name=path.split("\\")[-1].split("/")[-1])
 
-st.divider()
 c1, c2 = st.columns(2)
 if c1.button("근거PDF — 문항별 추출본"):
     outs = []

@@ -1,4 +1,8 @@
-"""Streamlit 공통 — 프로젝트 선택과 LLM 설정 사이드바 (tsbookmaker 사이드바 구성 참고)."""
+"""Streamlit 공통 — 페이지 머리말, 상태 배지, 사이드바(프로젝트 선택·LLM 설정).
+
+화면 틀은 app.py의 st.navigation이 만들고, 사이드바는 app.py에서 한 번만 그린다.
+각 화면은 header()로 제목을 쓰고 current_project()로 선택된 프로젝트를 받는다.
+"""
 from __future__ import annotations
 
 import streamlit as st
@@ -9,22 +13,46 @@ from .store import Project, list_projects
 
 STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
 TYPE_KO = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
+_BADGE = {"approved": ("green", "check_circle"), "auto_pass": ("blue", "task_alt"), "warn": ("orange", "warning"),
+          "manual": ("red", "error"), "deleted": ("gray", "delete")}
+
+
+def header(title: str, icon: str, caption: str = ""):
+    st.title(f":material/{icon}: {title}")
+    if caption:
+        st.caption(caption)
+
+
+def status_badge(s: str) -> str:
+    """마크다운 인라인 배지. 표(dataframe) 안에서는 STATUS_KO 글자를 쓴다."""
+    color, icon = _BADGE.get(s, ("gray", "help"))
+    return f":{color}-badge[:material/{icon}: {STATUS_KO.get(s, s)}]"
+
+
+def current_project() -> Project | None:
+    slug = st.session_state.get("project")
+    return Project(slug) if slug in list_projects() else None
 
 
 def setup(title: str):
-    st.set_page_config(page_title=f"평가문항 출제 · {title}", page_icon="📝", layout="wide")
+    """(호환용) 페이지 설정은 app.py에서 한 번만 한다."""
 
 
 def sidebar() -> Project | None:
+    """(호환용) 사이드바는 app.py에서 그린다."""
+    return current_project()
+
+
+def render_sidebar():
     with st.sidebar:
-        st.markdown("### 프로젝트")
+        st.markdown("#### :material/folder_open: 프로젝트")
         projects = list_projects()
         cur = st.session_state.get("project")
         if projects:
             idx = projects.index(cur) if cur in projects else 0
             sel = st.selectbox("과정(원고) 선택", projects, index=idx, label_visibility="collapsed")
             st.session_state["project"] = sel
-        with st.expander("새 프로젝트", expanded=not projects):
+        with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
             name = st.text_input("과정명", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
             if st.button("만들기", disabled=not name):
                 try:
@@ -34,8 +62,6 @@ def sidebar() -> Project | None:
                 except FileExistsError as e:
                     st.error(str(e))
         settings_box()
-    slug = st.session_state.get("project")
-    return Project(slug) if slug in list_projects() else None
 
 
 def settings_box():
@@ -43,7 +69,7 @@ def settings_box():
     P = llm_settings.PROVIDERS
     keys = list(P)
     title = " / ".join(sorted({P[x].split(" (")[0] for x in s.providers_in_use()}))
-    with st.expander(f"LLM 설정 · {title}", expanded=False):
+    with st.expander(f"LLM 설정 · {title}", expanded=False, icon=":material/smart_toy:"):
         provider = st.selectbox("생성 공급자", keys, index=keys.index(s.provider), format_func=lambda k: P[k])
         same = "(생성과 같음)"
         opts = [""] + keys
@@ -116,11 +142,6 @@ def settings_box():
 
 def require_project(p: Project | None) -> Project:
     if p is None:
-        st.info("왼쪽에서 프로젝트를 만들거나 선택하세요.")
+        st.info("왼쪽 사이드바에서 프로젝트를 만들거나 선택하세요.", icon=":material/arrow_back:")
         st.stop()
     return p
-
-
-def status_badge(s: str) -> str:
-    return {"approved": "🟢 승인", "auto_pass": "🔵 자동통과", "warn": "🟡 경고", "manual": "🔴 수동확인",
-            "deleted": "⚫ 삭제"}.get(s, s)

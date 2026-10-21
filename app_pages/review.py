@@ -6,25 +6,34 @@ import streamlit as st
 
 from exam_gen import integrity, review_ops, ui
 from exam_gen.generate import choice_builder
-from exam_gen.llm import settings as llm_settings
-from exam_gen.output.evidence_pdf import render_item_page
 from exam_gen.ingest.page_map import format_pages
+from exam_gen.llm import settings as llm_settings
+from exam_gen.output.evidence_pdf import item_viewer_payload, render_item_page
 
-ui.setup("검수")
+try:  # 검수 화면 PDF 뷰어(선택 패키지) — 없으면 페이지 이미지로 보여 준다
+    from streamlit_pdf_viewer import pdf_viewer
+except ImportError:
+    pdf_viewer = None
+
+
 
 
 def _label(it) -> str:
     return pages[it["page"]]["label"] if it.get("page") is not None else "-"
 
 
+def _chip(color: str, text: str) -> str:
+    """근거PDF와 같은 색(노랑·주황)의 범례 견본."""
+    return (f"<span style='border:3px solid {color};border-radius:4px;padding:0 6px;"
+            f"font-size:0.85em'>{text}</span>")
+
+
 def _s(v) -> str:
     return "" if v is None or (not isinstance(v, str) and pd.isna(v)) else str(v).strip()
 
 
-p = ui.require_project(ui.sidebar())
-st.title("4. 검수")
-st.caption("자동 검증(G1~G6)을 통과한 문항도 사람이 승인해야 최종 엑셀·근거PDF에 들어간다. "
-           "근거를 원고에서 찾지 못한 문항은 승인할 수 없다.")
+p = ui.require_project(ui.current_project())
+ui.header("검수", "fact_check", "자동 검증(G1~G6)을 통과한 문항도 사람이 승인해야 최종 출력에 들어간다.")
 
 items = p.items()
 if not items:
@@ -48,7 +57,7 @@ view = [it for it in items
         and (not f_text or f_text in it.get("stem", "") or f_text == it["key"])]
 st.caption(f"{len(view)}문항 표시 / 전체 {len(items)}")
 
-rows = pd.DataFrame([{"키": it["key"], "상태": ui.status_badge(it["status"]), "차시": it.get("chasi"),
+rows = pd.DataFrame([{"키": it["key"], "상태": ui.STATUS_KO.get(it["status"], it["status"]), "차시": it.get("chasi"),
                       "유형": ui.TYPE_KO[it["type"]], "난이도": it["difficulty"],
                       "쪽": format_pages([pages[g]["label"] for g in it.get("source_pages") or []]) or _label(it),
                       "발문": it.get("stem", "")[:70],
@@ -58,7 +67,7 @@ left, right = st.columns([5, 7])
 with left:
     sel = st.dataframe(rows, hide_index=True, width="stretch", height=560, on_select="rerun",
                        selection_mode="single-row", key="grid")
-    with st.expander("일괄 승인"):
+    with st.expander("일괄 승인", icon=":material/done_all:"):
         cand = [it["key"] for it in view if it["status"] == "auto_pass"]
         st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 승인한다. 승인 시 코드 관문을 다시 검사한다.")
         who = st.text_input("검수자", key="who_bulk")
@@ -82,11 +91,15 @@ with right:
                + f" · 난이도 {it['difficulty']} · 배치 {it['batch']} · 시도 {it['validation'].get('attempts')} · "
                f"근거 {it.get('evidence_level') or '없음'} · 모델 {it['gen'].get('model')}")
     for f in it["validation"].get("fails", []):
-        st.error(f)
-    for w in it["validation"].get("warnings", []):
-        st.warning(w)
+        st.error(f, icon=":material/block:")
+    warns = it["validation"].get("warnings", [])
+    if warns:
+        with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=len(warns) <= 3):
+            for w in warns:
+                st.markdown(f"- {w}")
 
-    tab_edit, tab_src, tab_check, tab_hist = st.tabs(["문항", "원고 근거", "검증 상세", "이력"])
+    tab_edit, tab_src, tab_check, tab_hist = st.tabs([":material/edit: 문항", ":material/menu_book: 원고 근거",
+                                                     ":material/rule: 검증 상세", ":material/history: 이력"])
     with tab_edit:
         it["stem"] = st.text_area("발문", it.get("stem", ""), height=90)
         if it.get("statements"):
@@ -145,7 +158,7 @@ with right:
             st.rerun()
         if b[1].button("승인", type="primary", width="stretch", disabled=not who or it["status"] == "deleted"):
             ok, fails = review_ops.approve(p, it["key"], who, evidence_confirmed=confirm)
-            (st.toast("승인했다.") if ok else st.error("승인 불가: " + "; ".join(fails)))
+            (st.toast("승인했다", icon=":material/check_circle:") if ok else st.error("승인 불가: " + "; ".join(fails)))
             st.rerun()
         if b[2].button("LLM 재검증", width="stretch", help="G4 독립 풀이 + G5 검수를 다시 실행"):
             with st.spinner("재검증 중…"):
@@ -165,10 +178,22 @@ with right:
         # 미리보기는 저장된 문항(근거 매칭 결과 포함) 기준 — 편집 중 내용은 저장하면 다시 매칭된다 (Codex C8)
         gs = saved.get("source_pages") or ([saved["page"]] if saved.get("page") is not None else [])
         if not gs:
-            st.warning("원고에서 확인된 근거 위치가 없다(근거 미매칭 또는 원고 삭제).")
-        for g in gs:
-            st.image(render_item_page(p, saved, g), caption=f"원고 p.{pages[g]['label']} — 노랑: 참 진술 근거 / 주황: 함정이 바꾼 원문",
-                     width="stretch")
+            st.warning("원고에서 확인된 근거 위치가 없다(근거 미매칭 또는 원고 삭제).", icon=":material/link_off:")
+        else:
+            c1, c2 = st.columns([3, 2])
+            c1.markdown(f"원고 p.{format_pages([pages[g]['label'] for g in gs])} &nbsp; "
+                        f"{_chip('#f5c400', '참 진술 근거')} {_chip('#ff8a1f', '함정이 바꾼 원문')}",
+                        unsafe_allow_html=True)
+            viewer = c2.toggle("PDF 뷰어(근거로 자동 이동)", value=pdf_viewer is not None, disabled=pdf_viewer is None,
+                               help="끄면 페이지 이미지로 본다. 뷰어 표시가 이상하면 끄세요.")
+            if viewer:
+                pdf, anns, _ = item_viewer_payload(p, saved)
+                pdf_viewer(pdf, annotations=anns, scroll_to_annotation=1 if anns else None, render_text=True,
+                           annotation_outline_size=3,
+                           height=820, key=f"pdf_{saved['key']}_{saved.get('updated', '')}")
+            else:
+                for g in gs:
+                    st.image(render_item_page(p, saved, g), caption=f"원고 p.{pages[g]['label']}", width="stretch")
 
     with tab_check:
         g4 = it["validation"].get("G4")

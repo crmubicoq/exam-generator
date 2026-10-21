@@ -1,0 +1,8 @@
+[theme]
+# 대시보드 기본 글자 크기(px). 기본값 16 → 18로 키워 표·입력란까지 함께 커진다.
+baseFontSize = 18
+# 지표(metric) 숫자 크기
+metricValueFontSize = "2rem"
+
+[browser]
+gatherUsageStats = false

@@ -10,9 +10,8 @@ from exam_gen.generate.generator import RESUMABLE, batch_state, resume_batch, st
 from exam_gen.llm import settings as llm_settings
 from exam_gen.plan.coverage import coverage_stats
 
-ui.setup("출제 진행")
-p = ui.require_project(ui.sidebar())
-st.title("3. 출제 진행")
+p = ui.require_project(ui.current_project())
+ui.header("출제 진행", "autorenew", "배치별 진행률, 관문별 탈락, 원고 전체 커버리지를 확인한다.")
 batches = p.batches()
 if not batches:
     st.info("출제 옵션 화면에서 출제를 시작하세요.")
@@ -43,14 +42,14 @@ def live():
     st.progress(min(got / total, 1.0), text=f"{got}/{total} 슬롯 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}")
     c = st.columns(6)
     c[0].metric("상태", {"running": "진행 중", "running_here": "진행 중", "done": "완료", "stopped": "중지됨", "error": "오류",
-                        "partial": "부분 완료", "orphan": "중단됨"}.get(status, status))
-    c[1].metric("통과", pr.get("accepted", 0))
-    c[2].metric("경고 포함", pr.get("warn", 0))
-    c[3].metric("수동 확인", pr.get("manual", 0))
-    c[4].metric("재출제 슬롯", pr.get("retries", 0))
+                        "partial": "부분 완료", "orphan": "중단됨"}.get(status, status), border=True)
+    c[1].metric("통과", pr.get("accepted", 0), border=True)
+    c[2].metric("경고 포함", pr.get("warn", 0), border=True)
+    c[3].metric("수동 확인", pr.get("manual", 0), border=True)
+    c[4].metric("재출제 슬롯", pr.get("retries", 0), border=True)
     ft = pr.get("first_try", {})
     rate = ft.get("g2_pass", 0) / ft["items"] if ft.get("items") else 0
-    c[5].metric("첫 시도 근거 매칭률", f"{rate:.0%}")
+    c[5].metric("첫 시도 근거 매칭률", f"{rate:.0%}", border=True)
     if state == "orphan":
         st.error("실행 주체가 없는 배치다(서버 재시작 등으로 중단됨). '이어서 출제'로 남은 슬롯을 재개할 수 있다.")
     elif state == "running_elsewhere":
@@ -75,7 +74,7 @@ def live():
 live()
 
 # ---------- 분포·커버리지 ----------
-st.subheader("분포와 커버리지")
+st.subheader(":material/bar_chart: 분포와 커버리지")
 items = [it for it in p.items() if it["status"] != "deleted"]
 bi = [it for it in items if it["batch"] == sel]
 if bi:
@@ -108,7 +107,7 @@ imp = [it for it in good if any("지엽" in w for w in it["validation"].get("war
 if imp:
     st.warning(f"지엽성 경고 문항 {len(imp)}개 — 검수 화면에서 '경고' 필터로 확인하세요.")
 
-with st.expander("탈락 기록 (최근 200건)"):
+with st.expander("탈락 기록 (최근 200건)", icon=":material/history:"):
     ev = [e for e in p.events(batch=sel, limit=200) if e["kind"] == "gate_fail"]
     if ev:
         st.dataframe(pd.DataFrame([{"시각": e["ts"], "슬롯": e["detail"].get("sid"), "시도": e["detail"].get("attempt"),

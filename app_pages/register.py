@@ -10,13 +10,12 @@ import streamlit as st
 from exam_gen import ui
 from exam_gen.ingest.convert import SUPPORTED, ConvertError
 
-ui.setup("원고 등록")
-p = ui.require_project(ui.sidebar())
-st.title("1. 원고 등록")
+p = ui.require_project(ui.current_project())
+ui.header("원고 등록", "upload_file", "원고를 올리고 책 쪽수 매핑을 확정한다. 확정 전에는 출제를 시작할 수 없다.")
 
 # ---------- 업로드 ----------
 with st.container(border=True):
-    st.markdown("**원고 업로드** — PDF·PPTX·DOCX·HWP (모두 PDF로 변환해 근거 표시에 사용)")
+    st.markdown(":material/upload_file: **원고 업로드** — PDF·PPTX·DOCX·HWP (모두 PDF로 변환해 근거 표시에 사용)")
     ups = st.file_uploader("원고 파일", type=[e.lstrip(".") for e in SUPPORTED], accept_multiple_files=True,
                            label_visibility="collapsed")
     if ups and st.button(f"{len(ups)}개 파일 등록", type="primary"):
@@ -38,7 +37,7 @@ if not meta["sources"]:
     st.stop()
 
 # ---------- 쪽수 매핑 ----------
-st.subheader("책 쪽수 매핑 확인")
+st.subheader(":material/format_list_numbered: 책 쪽수 매핑 확인")
 st.caption("엑셀 'PPT' 열과 근거PDF에는 원고에 인쇄된 쪽수를 쓴다. 자동 감지 결과를 원본 이미지와 비교해 확인하세요. "
            "확인 전에는 출제를 시작할 수 없다(자동 중단 조건 1).")
 for s in meta["sources"]:
@@ -46,7 +45,7 @@ for s in meta["sources"]:
     with st.container(border=True):
         c1, c2 = st.columns([3, 2])
         with c1:
-            ok = "✅ 확인됨" if s.get("page_map_confirmed") else "⚠️ 확인 필요"
+            ok = ":green-badge[:material/check: 확인됨]" if s.get("page_map_confirmed") else ":orange-badge[:material/warning: 확인 필요]"
             st.markdown(f"**{s['filename']}** · {s['pages']}페이지 · {s['kind'].upper()} · {ok}")
             mode_desc = {"printed": "인쇄 쪽수 감지", "pdf": "쪽수 감지 실패 → PDF 순번 사용", "slide": "슬라이드 번호"}
             st.write(f"감지: {mode_desc.get(pm['mode'], pm['mode'])} · PDF 1쪽 = 책 {pm['offset']}쪽 "
@@ -80,7 +79,7 @@ for s in meta["sources"]:
             doc.close()
 
 # ---------- 과정 정보 ----------
-st.subheader("과정 정보")
+st.subheader(":material/school: 과정 정보")
 c1, c2 = st.columns([1, 2])
 subject = c1.text_input("과목/주제명 (문항 앞 [주제명] 접두에 사용)", value=meta.get("subject_tag", ""))
 objectives = c2.text_area("학습목표 (출제·검수 시 '중요 내용' 판단 기준)", value=meta.get("objectives", ""), height=110)
@@ -95,10 +94,10 @@ if not meta.get("objectives"):
         st.caption("원고에서 찾은 학습목표 후보: " + found[0][:200])
 if st.button("과정 정보 저장"):
     p.update_meta(subject_tag=subject, objectives=objectives)
-    st.success("저장했다.")
+    st.toast("저장했다", icon=":material/check:")
 
 # ---------- 페이지 표 ----------
-st.subheader("페이지별 차시·출제 제외")
+st.subheader(":material/view_list: 페이지별 차시·출제 제외")
 st.caption("차시를 고치거나 표지·목차·학습정리처럼 출제하지 않을 페이지를 '제외'로 표시하세요. 글자 수가 적은 페이지는 자동 제외된다.")
 pages = p.pages
 srcname = {s["id"]: s["filename"] for s in meta["sources"]}
@@ -123,6 +122,6 @@ if st.button("페이지 설정 저장", type="primary"):
     for x, (_, row) in zip(pages, edited.iterrows()):
         x["chasi"], x["excluded"] = int(row["차시"]), bool(row["제외"])
     p.save_pages(pages)
-    st.success("저장했다.")
+    st.toast("저장했다", icon=":material/check:")
 elig = [x for x in pages if not x["excluded"]]
 st.caption(f"출제 대상 {len(elig)}페이지 / 전체 {len(pages)}페이지 · 차시 {sorted({x['chasi'] for x in elig})}")

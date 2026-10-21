@@ -184,6 +184,32 @@ def _page_header(page, text: str):
                         css=_css(), archive=_archive())
 
 
+_HEX = {True: "#f5c400", False: "#ff8a1f"}  # 참 진술 근거 / 함정 원문
+
+
+def item_viewer_payload(project, item: dict) -> tuple[bytes, list[dict], list[str]]:
+    """검수 화면 PDF 뷰어용: 근거 페이지만 잘라 만든 PDF, 근거 위치 상자(annotations), 페이지 라벨.
+    좌표는 PDF 포인트 단위이며 page는 잘라 만든 PDF 기준 1부터."""
+    gs = item.get("source_pages") or ([item["page"]] if item.get("page") is not None else [])
+    src = pymupdf.open(project.manuscript_path)
+    doc = pymupdf.open()
+    for g in gs:
+        doc.insert_pdf(src, from_page=g, to_page=g)
+    pdf = doc.tobytes(garbage=3, deflate=True)
+    doc.close()
+    src.close()
+    anns = []
+    for ev in item.get("evidence") or []:
+        m = ev.get("match")
+        if not m or m.get("g") not in gs:
+            continue
+        for bb in m.get("bboxes") or []:
+            anns.append({"page": gs.index(m["g"]) + 1, "x": bb[0] - 2, "y": bb[1] - 1,
+                         "width": bb[2] - bb[0] + 4, "height": bb[3] - bb[1] + 2,
+                         "color": _HEX[bool(ev.get("is_true"))], "border": "solid"})
+    return pdf, anns, [project.pages[g]["label"] for g in gs]
+
+
 def render_item_page(project, item: dict, g: int, dpi: int = 110) -> bytes:
     """검수 화면용: 원고 페이지 g에 이 문항의 근거 하이라이트를 그린 PNG."""
     src = pymupdf.open(project.manuscript_path)

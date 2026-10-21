@@ -12,3 +12,4 @@ claude-agent-sdk>=0.2
 pywin32>=306; sys_platform == "win32"
 pytest>=8.0
 keyring>=24
+streamlit-pdf-viewer>=0.0.19

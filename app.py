@@ -13,7 +13,8 @@ PAGES = {
     "준비": [st.Page("app_pages/register.py", title="원고 등록", icon=":material/upload_file:"),
              st.Page("app_pages/options.py", title="출제 옵션", icon=":material/tune:")],
     "출제": [st.Page("app_pages/progress.py", title="출제 진행", icon=":material/autorenew:")],
-    "검수·출력": [st.Page("app_pages/review.py", title="검수", icon=":material/fact_check:"),
+    "검수·출력": [st.Page("app_pages/quality.py", title="품질 리포트", icon=":material/analytics:"),
+                 st.Page("app_pages/review.py", title="검수", icon=":material/fact_check:"),
                  st.Page("app_pages/export.py", title="출력", icon=":material/download:")],
 }
 

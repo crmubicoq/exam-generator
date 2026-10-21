@@ -59,6 +59,8 @@ def live():
     gf = pr.get("gate_fail", {})
     st.caption("관문별 탈락(시도 기준): " + " · ".join(f"{k} {v}" for k, v in gf.items()) +
                f" · LLM 호출 {pr.get('usage', {}).get('calls', 0)}회")
+    if status in ("done", "partial") and st.button("품질 리포트 보기", icon=":material/analytics:", key="to_quality"):
+        st.switch_page("app_pages/quality.py")
     if state == "running_here":
         if st.button("중지", type="secondary"):
             stop_batch(p, sel)

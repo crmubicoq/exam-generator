@@ -1,65 +1,149 @@
-"""출제 결과 품질 집계 — 자체 평가(2026-10-21) 항목을 자동으로 센다. 프로젝트·배치 간 비교용.
+"""출제 품질 자체 평가 — 출제 결과를 지침·유의사항 기준으로 자동 집계하고 항목별 등급을 매긴다.
 
+대시보드 '품질 리포트' 화면과 CLI가 같은 계산을 쓴다.
   python -m exam_gen.quality_report <프로젝트> [<프로젝트> ...]
+
+등급은 A(납품 수준) · B(경미한 보완) · C(보완 필요) · D(재출제 권장). 기준은 GRADE_RULES에 있다.
 """
 from __future__ import annotations
 
-import re
 import sys
 from collections import Counter
 
 from . import integrity
+from .config import criteria
 from .generate.choice_builder import shortcut_problems
 from .plan.coverage import coverage_stats
 from .store import Project
 from .validate import rules
 
 LEVELS = ["최상", "상", "중", "하"]
+ACCEPTED = ("auto_pass", "warn", "approved")
+
+# 항목: (설명, 지표 설명, [A 상한, B 상한, C 상한]) — 지표가 상한 이하이면 그 등급
+GRADE_RULES = {
+    "accuracy": ("정답 정확성", "검수에서 정답 오류를 지적받은 문항 비율", [0.0, 0.03, 0.08]),
+    "dispute": ("이의 제기 여지", "학습자가 다른 답을 주장할 여지를 지적받은 문항 비율", [0.05, 0.15, 0.30]),
+    "evidence": ("출처(근거)", "원문과 글자 단위로 일치하지 않는 근거 비율(L1·미매칭)", [0.05, 0.15, 0.30]),
+    "coverage": ("원고 전반 출제", "문항이 없는 출제 대상 페이지 비율", [0.0, 0.05, 0.15]),
+    "format": ("형식·지침", "지침 형식 위반·경고가 있는 문항 비율", [0.05, 0.15, 0.30]),
+    "discrimination": ("변별력(보기)", "상식으로 정답이 보이는 보기·조합형 지름길 문항 비율", [0.05, 0.15, 0.30]),
+    "difficulty": ("난이도 분포", "목표 대비 실제 난이도(검수 판정) 분포 차이(총변동거리)", [0.10, 0.20, 0.35]),
+}
+_FORMAT_PREFIXES = ("G3:",)
+_ACCURACY_TAGS = ("G5[정답]",)
+_DISPUTE_TAGS = ("G5[이의 제기 여지]",)
 
 
-def measure(p: Project) -> dict:
-    items = p.items()
-    ok = [it for it in items if it["status"] in ("auto_pass", "warn", "approved")]
-    mcq = [it for it in ok if it["type"] == "mcq"]
-    leak = [it for it in ok if any(rules._LEAK.search(rules._QUOTED.sub("", t or "")) for _, t in rules._texts(it))]
-    deictic = [it for it in ok if rules._DEICTIC.search(it.get("stem", ""))]
-    nonq = [it for it in mcq if not it["stem"].rstrip().endswith("?")]
-    shortcut = []
-    for it in mcq:
-        if it.get("statements"):
-            correct = [s["label"] for s in it["statements"] if s.get("is_true")]
-            d = [c.get("labels") or [] for i, c in enumerate(it["choices"]) if str(i + 1) != str(it["answer"])]
-            if shortcut_problems(correct, d):
-                shortcut.append(it)
-    g5 = [(it.get("difficulty_target") or it["slot"]["difficulty"], (it["validation"].get("G5") or {}).get("assessed_difficulty"))
-          for it in ok]
-    mismatch = sum(1 for t, a in g5 if a and a != t)
-    choices_warn = [it for it in ok if any(w.startswith("G5[보기]") for w in it["validation"].get("warnings", []))]
-    target = Counter(s["difficulty"] for b in p.batches() for s in b["slots"] if not s.get("topup"))
-    final = Counter(it["difficulty"] for it in ok)
+def actual_difficulty(it: dict) -> str:
+    """실제 난이도 = 검수(G5) 판정. 판정이 없으면 표시 난이도."""
+    lv = (it["validation"].get("G5") or {}).get("assessed_difficulty")
+    return lv if lv in LEVELS else it["difficulty"]
+
+
+def _grade(value: float, cuts: list[float]) -> str:
+    for g, c in zip("ABC", cuts):
+        if value <= c + 1e-9:
+            return g
+    return "D"
+
+
+def _issues(it: dict) -> dict[str, list[str]]:
+    """문항 하나의 문제를 범주별로."""
+    out: dict[str, list[str]] = {}
+    warns = it["validation"].get("warnings", [])
+
+    def add(cat, msg):
+        out.setdefault(cat, []).append(msg)
+
+    for w in warns:
+        if w.startswith(_ACCURACY_TAGS):
+            add("accuracy", w)
+        elif w.startswith(_DISPUTE_TAGS):
+            add("dispute", w)
+        elif w.startswith("G5[보기]"):
+            add("discrimination", w)
+        elif w.startswith(_FORMAT_PREFIXES) or w.startswith(("G5[오타·비문]", "G5[조건 누락]", "G5[해설]")):
+            add("format", w)
+    if it["type"] == "mcq" and not it["stem"].rstrip().endswith("?"):
+        add("format", "선다형 발문이 질문형이 아님")
+    if any(rules._LEAK.search(rules._QUOTED.sub("", t or "")) for _, t in rules._texts(it)):
+        add("format", "'원고'·쪽수·절 번호 노출")
+    if rules._DEICTIC.search(it.get("stem", "")):
+        add("format", "대상 없는 지시어")
+    if it.get("statements"):
+        correct = [s["label"] for s in it["statements"] if s.get("is_true")]
+        d = [c.get("labels") or [] for i, c in enumerate(it["choices"]) if str(i + 1) != str(it["answer"])]
+        for m in shortcut_problems(correct, d):
+            add("discrimination", f"조합형 — {m}")
+    lv = [(e.get("match") or {}).get("level") for e in it["evidence"] if e.get("quote")]
+    if any(x != "L2" for x in lv):
+        add("evidence", "원문과 글자 단위로 일치하지 않는 근거가 있음(L1·미매칭)")
+    return out
+
+
+def analyze(p: Project, batch: int | None = None) -> dict:
+    items = [it for it in p.items() if batch is None or it.get("batch") == batch]
+    ok = [it for it in items if it["status"] in ACCEPTED]
+    n = len(ok) or 1
+    issues = {it["key"]: _issues(it) for it in ok}
+
+    def ratio(cat):
+        return sum(1 for v in issues.values() if cat in v) / n
+
+    batches = [b for b in p.batches() if batch is None or b["batch"] == batch]
+    target = Counter(s["difficulty"] for b in batches for s in b["slots"] if not s.get("topup"))
+    final = Counter(actual_difficulty(it) for it in ok)
+    t_tot, f_tot = sum(target.values()) or 1, sum(final.values()) or 1
+    tvd = sum(abs(target.get(lv, 0) / t_tot - final.get(lv, 0) / f_tot) for lv in LEVELS) / 2
     ev = [(e.get("match") or {}).get("level") for it in ok for e in it["evidence"] if e.get("quote")]
+    elig = [pg for pg in p.pages if not pg["excluded"]]
     cov = coverage_stats(p.pages, Counter(it["page"] for it in ok))
+    values = {
+        "accuracy": ratio("accuracy"),
+        "dispute": ratio("dispute"),
+        "evidence": (1 - ev.count("L2") / len(ev)) if ev else 1.0,
+        "coverage": len(cov["zero"]) / (len(elig) or 1),
+        "format": ratio("format"),
+        "discrimination": ratio("discrimination"),
+        "difficulty": tvd,
+    }
+    grades = {k: _grade(v, GRADE_RULES[k][2]) for k, v in values.items()}
+    opts = {**criteria()["defaults"], **p.meta.get("options", {})}
+    mcq = [it for it in ok if it["type"] == "mcq"]
+    ox = [it for it in ok if it["type"] == "ox"]
     return {
-        "project": p.meta["name"], "slots": sum(len(b["slots"]) for b in p.batches()),
-        "accepted": len(ok), "manual": sum(1 for it in items if it["status"] == "manual"),
-        "warn": sum(1 for it in ok if it["status"] == "warn"),
-        "mcq_not_question": f"{len(nonq)}/{len(mcq)}", "leak_원고": len(leak), "deictic": len(deictic),
-        "combo_shortcut": len(shortcut), "g5_choices_warn": len(choices_warn),
-        "difficulty_mismatch(목표≠판정)": f"{mismatch}/{len(ok)}",
-        "difficulty_target": {lv: target.get(lv, 0) for lv in LEVELS},
-        "difficulty_final": {lv: final.get(lv, 0) for lv in LEVELS},
-        "difficulty_G5판정": {lv: sum(1 for _, x in g5 if x == lv) for lv in LEVELS},
-        "evidence_L2": f"{ev.count('L2')}/{len(ev)}", "zero_pages": [p.pages[g]["label"] for g in cov["zero"]],
-        "verified": sum(1 for it in ok if integrity.is_verified(it)),
+        "project": p.meta["name"], "batch": batch,
+        "counts": {"slots": sum(len(b["slots"]) for b in batches), "accepted": len(ok),
+                   "manual": sum(1 for it in items if it["status"] == "manual"),
+                   "approved": sum(1 for it in items if it["status"] == "approved"),
+                   "warn": sum(1 for it in ok if it["status"] == "warn"),
+                   "verified": sum(1 for it in ok if integrity.is_verified(it))},
+        "values": values, "grades": grades,
+        "difficulty": {"target": {lv: target.get(lv, 0) for lv in LEVELS}, "final": {lv: final.get(lv, 0) for lv in LEVELS},
+                       "target_pct": opts.get("difficulty_pct", {})},
+        "types": {t: sum(1 for it in ok if it["type"] == t) for t in criteria()["type_order"]},
+        "answer_pos": {k: sum(1 for it in mcq if str(it["answer"]) == k) for k in "1234"},
+        "ox": {k: sum(1 for it in ox if it["answer"] == k) for k in "OX"},
+        "polarity": {k: sum(1 for it in mcq if it.get("polarity") == k) for k in ("positive", "negative")},
+        "evidence_levels": {k: ev.count(k) for k in ("L2", "L1")} | {"미매칭": sum(1 for x in ev if x is None)},
+        "coverage": {"zero": [p.pages[g]["label"] for g in cov["zero"]],
+                     "dense": [p.pages[g]["label"] for g in cov["dense"]],
+                     "pages": len(elig)},
+        "issues": {k: v for k, v in issues.items() if v},
+        "items": {it["key"]: it for it in ok},
+        "batch_summaries": [b.get("summary") or {} for b in batches],
     }
 
 
 def main(argv=None):
     for slug in (argv or sys.argv[1:]):
-        r = measure(Project(slug))
-        print(f"\n== {r.pop('project')}")
-        for k, v in r.items():
-            print(f"  {k:28} {v}")
+        r = analyze(Project(slug))
+        print(f"\n== {r['project']}  ({r['counts']})")
+        for k, (name, desc, _) in GRADE_RULES.items():
+            print(f"  {name:10} {r['grades'][k]}  {r['values'][k]:.0%}  — {desc}")
+        print("  난이도 목표", r["difficulty"]["target"], "/ 실제", r["difficulty"]["final"])
+        print("  0문항 페이지", r["coverage"]["zero"], "· 문제 문항", len(r["issues"]))
 
 
 if __name__ == "__main__":

@@ -43,6 +43,10 @@ class LLMClient:
             raise LLMError(f"알 수 없는 공급자: {provider}")
         if task in ROLES:
             model = self.s.model_for(task)
+        if provider == "codex_cli" and model.lower().startswith("claude"):
+            model = ""  # 다른 공급자용 모델명이 남아 있으면 Codex CLI 기본 모델을 쓴다
+        if provider in ("claude_agent_sdk", "anthropic") and model and not model.lower().startswith("claude"):
+            model = "claude-sonnet-5-5"
         bp = self.usage["by_provider"]
         bp[provider] = bp.get(provider, 0) + 1
         last = None

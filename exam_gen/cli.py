@@ -31,7 +31,7 @@ def main(argv=None):
     r.add_argument("project")
     r.add_argument("--total", type=int, default=30)
     r.add_argument("--pages", help="출제할 페이지 인덱스(0부터, 쉼표) — 지정 시 해당 페이지에만 균등 배분")
-    r.add_argument("--provider")
+    r.add_argument("--provider", help="mock | claude_agent_sdk | codex_cli | anthropic | openai_compat")
     e = sub.add_parser("export")
     e.add_argument("project")
     e.add_argument("--draft", action="store_true")
@@ -50,8 +50,8 @@ def main(argv=None):
     elif args.cmd == "run":
         p = Project(args.project)
         s = llm_settings.load()
-        if args.provider:
-            s.provider = args.provider
+        if args.provider:  # 생성·G4·G5 모두 이 공급자로
+            s.provider, s.provider_solve, s.provider_review = args.provider, "", ""
         opts = {**criteria()["defaults"], **p.meta.get("options", {})}
         pages = p.pages
         if args.pages:

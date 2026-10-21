@@ -17,6 +17,21 @@ _NEG = re.compile(r"않은|아닌|틀린|거리가\s*먼|부적절|잘못된|옳
 _NOANSWER = re.compile(r"정답\s*없음|모두\s*정답|모두\s*옳다|모두\s*틀리다")
 _QUOTED = re.compile(r"“[^”]*”|\"[^\"]*\"|‘[^’]*’|「[^」]*」|『[^』]*』")
 _PARTICLE = re.compile(r"\s*(?:으로|로서|로써|에서|에게|이란|이라|란|은|는|이|가|을|를|와|과|로|의|도|만|에)")
+# 학습자는 원고를 볼 수 없다 — 문항·보기·해설에 원고·쪽수·절 번호를 노출하지 않는다
+_LEAK = re.compile(r"원고|교안|\bp\.\s*\d|\d+\s*(?:쪽|페이지)|['‘]\s*\d+(?:\.\d+)+\.?\s")
+# 문항 안에 가리키는 대상이 없는 지시어 (유의사항: 주체·대상·상황 누락 금지)
+_DEICTIC = re.compile(r"(?:^|[\s\[(])(?:이|그|해당|위|앞)\s?(?:시기|단계|고객|과정|경우|방법|제도|항목|사례)(?=[의은는이가을를에도와과\s,.]|$)")
+# '…것을 고른다.' 같은 서술형 발문 → '…것은?'으로 고칠 수 있는 형태
+_STEM_SOURCE_PREFIX = re.compile(r"^(?:원고|교재)(?:에\s*따르면,?|에\s*따른|에\s*제시된|의|에서)\s*")
+_STATEMENT_STEM = re.compile(r"(\S+?)(?:을|를)\s*(?:모두\s*)?(?:고른다|선택한다|고르시오|선택하시오|고르는\s*문항이다|찾는다|찾으시오)\.?$")
+
+
+def _topic_particle(word: str) -> str:
+    """받침 유무에 따라 '은/는'."""
+    ch = word[-1] if word else ""
+    if "가" <= ch <= "힣":
+        return "은" if (ord(ch) - 0xAC00) % 28 else "는"
+    return "은"
 
 
 def _texts(item: dict) -> list[tuple[str, str]]:
@@ -31,7 +46,13 @@ def autofix(item: dict):
         c["text"] = _PREFIX.sub("", c.get("text", "")).strip()
     for s in item.get("statements") or []:
         s["text"] = _PREFIX.sub("", s.get("text", "")).strip()
-    item["stem"] = (item.get("stem") or "").strip()
+    item["stem"] = _STEM_SOURCE_PREFIX.sub("", (item.get("stem") or "").strip())
+    if item.get("type") == "mcq" and not item["stem"].endswith("?"):
+        # '…옳지 않은 것을 고른다.' / '…설명을 고르는 문항이다.' → '…옳지 않은 것은?' (지침·양식의 발문 형태)
+        m = _STATEMENT_STEM.search(item["stem"])
+        if m:
+            word = m.group(1)
+            item["stem"] = item["stem"][:m.start()] + word + _topic_particle(word) + "?"
 
 
 def check(item: dict) -> tuple[list[str], list[str]]:
@@ -85,18 +106,54 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             if lens and min(lens) > 0 and max(lens) / min(lens) > c["thresholds"]["choice_length_ratio_warn"]:
                 warns.append("G3: 보기 길이 차이가 큼")
         if not stem.rstrip().endswith("?"):
-            warns.append("G3: 선다형 발문이 물음표로 끝나지 않음")
+            fails.append("G3: 선다형 발문은 '…것은?'처럼 물음표로 끝나는 질문이어야 함")
+
+    for where, text in _texts(item):
+        if _LEAK.search(_QUOTED.sub("", text or "")):
+            fails.append(f"G3: {where}에 '원고'·쪽수·절 번호 노출 — 학습자는 원고를 볼 수 없음")
+            break
+
+    for where, text in [("발문", item.get("stem", ""))] + [(f"진술{s['label']}", s.get("text", ""))
+                                                           for s in item.get("statements") or []]:
+        m = _DEICTIC.search(text or "")
+        if m:
+            fails.append(f"G3: {where}의 '{m.group().strip(' [(')}'가 가리키는 대상이 문항 안에 없음 — 대상을 명시할 것")
+            break
 
     if t == "ox" and item.get("answer") == "O":
         ns, ne = normalize(item.get("stem", "")), normalize(item.get("explanation", ""))
         if ns and (ne == ns or (ns in ne and len(ne) < len(ns) * 1.3)):
             fails.append("G3: 진위형 O 문항의 해설이 지문과 동일함")
+        elif _word_overlap(item.get("stem", ""), item.get("explanation", "")) >= 0.75:
+            fails.append("G3: 진위형 O 문항의 해설이 지문을 거의 반복함 — 판정과 그 이유를 쓸 것")
+
+    if item.get("difficulty") in ("상", "최상") and t in ("ox", "short"):
+        # 상·최상은 여러 구절을 연결해야 한다 — 서로 겹치지 않는 근거 2곳 이상 (자체 평가: 대부분 한 문장 대조형)
+        spots = []
+        for ev in item.get("evidence") or []:
+            m = ev.get("match")
+            if m and not any(m["g"] == g and set(m["lines"]) & ls for g, ls in spots):
+                spots.append((m["g"], set(m["lines"])))
+        if len(spots) < 2:
+            fails.append("G3: 상·최상 문항은 서로 다른 구절의 근거가 2곳 이상 필요함(한 문장 대조로 풀림)")
+
+    if t == "short":
+        ans = item.get("answer", "")
+        if len(re.sub(r"\s", "", ans)) > 10 or len(ans.split()) > 3:
+            warns.append("G3: 단답형 정답이 단어 수준보다 김")
 
     if len(item.get("explanation", "")) < 15:
         warns.append("G3: 해설이 너무 짧음")
 
     fails += _modality(item)
     return fails, warns
+
+
+def _word_overlap(a: str, b: str) -> float:
+    """지문 어절 중 해설에 그대로 나오는 비율(어미·조사 차이를 줄이려고 앞 2글자로 비교)."""
+    wa = {w[:2] for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", a or "")}
+    wb = {w[:2] for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", b or "")}
+    return len(wa & wb) / len(wa) if wa else 0.0
 
 
 def _modality(item: dict) -> list[str]:

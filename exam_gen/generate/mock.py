@@ -68,10 +68,10 @@ def _make(s, sents, alterable, rng, label):
         src = rng.choice(alterable if s["answer"] == "X" else sents)
         if s["answer"] == "X" and _alter(src):
             stem, note = _alter(src)
-            expl = f"원고에 따르면 {src[:-1]}는 내용이므로 틀린 설명이다."
+            expl = f"틀린 설명이다. 학습 내용에 따르면 {src[:-1]}는 것이 맞다."
             ev = _ev("OX", src, label, False, note)
         else:
-            stem, expl = src, "원고에서 설명한 내용과 일치하는 올바른 설명이다."
+            stem, expl = src, "올바른 설명이다. 이 과정에서 학습한 내용과 일치한다."
             ev = _ev("OX", src, label, True)
             s = {**s, "answer": "O"}
         return {**base, "key_point": src[:40], "stem": stem, "answer": s["answer"], "explanation": expl, "evidence": [ev]}
@@ -90,7 +90,7 @@ def _make(s, sents, alterable, rng, label):
         else:
             stem_s = src[:i] + blank + src[i + len(term):]
         return {**base, "key_point": f"용어 {term}", "stem": f"다음 괄호 안에 들어갈 용어를 작성하시오. [{stem_s}]",
-                "answer": term, "explanation": f"원고에서 해당 개념은 '{term}'로 설명한다.",
+                "answer": term, "explanation": f"정답은 '{term}'이다. 학습 내용에서 해당 개념을 이 용어로 설명한다.",
                 "evidence": [_ev("A", src, label, True)]}
 
     if s.get("combo"):
@@ -107,8 +107,8 @@ def _make(s, sents, alterable, rng, label):
             else:
                 st.append({"label": lb, "text": src, "is_true": True})
                 evs.append(_ev(lb, src, label, True))
-        return {**base, "key_point": picks[0][:40], "stem": "다음 중 원고의 설명으로 옳은 것을 모두 고른 것은?",
-                "statements": st, "answer": "", "explanation": "참인 진술은 원고 내용과 일치하고, 나머지는 원고의 표현을 바꾼 것이다.",
+        return {**base, "key_point": picks[0][:40], "stem": "다음 중 학습 내용에 관한 설명으로 옳은 것을 모두 고른 것은?",
+                "statements": st, "answer": "", "explanation": "참인 진술은 학습 내용과 일치하고, 나머지는 핵심 표현을 바꾼 것이다.",
                 "evidence": evs}
 
     pos = int(s["answer"])
@@ -124,9 +124,9 @@ def _make(s, sents, alterable, rng, label):
         else:
             choices.append({"text": src, "is_true": True})
             evs.append(_ev(str(i), src, label, True))
-    stem = "다음 중 원고의 설명으로 옳은 것은?" if positive else "다음 중 원고의 설명으로 옳지 않은 것은?"
+    stem = "다음 중 학습 내용에 관한 설명으로 옳은 것은?" if positive else "다음 중 학습 내용에 관한 설명으로 옳지 않은 것은?"
     return {**base, "key_point": pool[pos - 1][:40], "stem": stem, "choices": choices, "answer": str(pos),
-            "explanation": f"{pos}번은 원고 내용과 {'일치한다' if positive else '다르다'}. 원고에 따르면 {pool[pos - 1]}",
+            "explanation": f"정답은 {pos}번이다. 학습 내용과 {'일치한다' if positive else '다르다'}. 올바른 내용은 다음과 같다. {pool[pos - 1]}",
             "evidence": evs}
 
 

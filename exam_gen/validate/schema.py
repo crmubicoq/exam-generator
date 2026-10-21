@@ -44,7 +44,7 @@ SOLVE_SCHEMA = {
 
 REVIEW_CHECKS = ["answer", "explanation", "choices", "language", "dispute", "completeness",
                  "importance", "difficulty", "fairness"]
-REVIEW_BLOCKING = {"answer", "dispute"}  # fail이면 탈락, 나머지 fail은 사람 확인(경고)
+REVIEW_BLOCKING = {"answer", "dispute", "choices"}  # fail이면 탈락(보기: 상식만으로 정답이 보이는 경우), 나머지 fail은 사람 확인(경고)
 
 REVIEW_SCHEMA = {
     "type": "object", "required": ["results"],
@@ -111,6 +111,10 @@ def check_structure(item: dict, slot: dict) -> list[str]:
                     f.append("G1: 참 진술 조합과 일치하는 보기가 정확히 하나가 아님")
                 elif str(hits[0]) != str(item.get("answer")) or str(item.get("answer")) != str(slot["answer"]):
                     f.append(f"G1: 조합형 정답 위치 불일치(보기 {hits[0]}, 정답 {item.get('answer')}, 슬롯 {slot['answer']})")
+                else:
+                    from ..generate.choice_builder import shortcut_problems
+                    f += [f"G1: 조합형 보기 — {m}" for m in
+                          shortcut_problems(correct, [x for i, x in enumerate(sets) if i + 1 != hits[0]])]
     else:
         ch = item.get("choices") or []
         if len(ch) != 4:

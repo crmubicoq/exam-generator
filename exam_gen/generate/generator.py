@@ -18,17 +18,22 @@ import time
 import traceback
 import uuid
 import zlib
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import integrity
 from ..config import PROMPT_VERSION, criteria
 from ..llm.client import LLMClient, LLMError
 from ..llm.prompts import render
+from ..plan.coverage import allocate
+from ..plan.slots import build_slots
 from ..store import Project, now
 from ..validate import dedup, evidence, review_llm, rules, schema, solver
 from . import choice_builder
 
-RUNNING: dict[tuple[str, int], "Pipeline"] = {}  # Streamlit 세션 간 공유되는 실행 중 배치
+RUNNING: dict[tuple[str, int], "Pipeline"] = {}
+HARD = ("상", "최상")
+LEVELS = ("최상", "상", "중", "하")  # Streamlit 세션 간 공유되는 실행 중 배치
 
 
 def slot_spec(s: dict) -> str:
@@ -77,28 +82,10 @@ class Pipeline:
             # page가 None인 슬롯은 원고가 삭제된 페이지 — 출제하지 않는다
             todo = [s for s in self.slots if s["sid"] not in done_sids and s.get("page") is not None]
             self.slots = [s for s in self.slots if s.get("page") is not None]
-            by_page: dict[int, list] = {}
-            for s in todo:
-                by_page.setdefault(s["page"], []).append(s)
-            self.prog["pages_total"] = len(by_page)
-            self._flush()
-            with ThreadPoolExecutor(max_workers=max(1, self.s.workers)) as ex:
-                futs = {ex.submit(self._page, g, sl): g for g, sl in by_page.items()}
-                for fu in as_completed(futs):
-                    exc = fu.exception()
-                    if exc:
-                        if isinstance(exc, LLMError):
-                            self._halt(f"LLM 오류로 중단: {exc}")
-                        else:
-                            with self.lock:
-                                self.page_errors.append(futs[fu])
-                            self.p.log("page_error", {"page": futs[fu], "error": repr(exc),
-                                                      "trace": "".join(traceback.format_exception(exc))[-2000:]},
-                                       batch=self.batch)
-                    with self.lock:
-                        self.prog["pages_done"] += 1
-                    self._autostop_check()
-                    self._flush()
+            self._process(todo)
+            if self.prog["status"] == "running" and self.opts.get("difficulty_topup", True) \
+                    and not any(s.get("topup") for s in self.slots):
+                self._topup()
             if self.prog["status"] == "running":
                 saved = {it["slot"]["sid"] for it in self.p.items(batch=self.batch)}
                 missing = [s["sid"] for s in self.slots if s["sid"] not in saved]
@@ -121,6 +108,57 @@ class Pipeline:
             self.p.set_batch_status(self.batch, self.prog["status"], self.prog)
             self.p.log("batch_end", self.prog, batch=self.batch)
             RUNNING.pop((self.p.slug, self.batch), None)
+
+    def _process(self, todo: list[dict]):
+        by_page: dict[int, list] = {}
+        for s in todo:
+            by_page.setdefault(s["page"], []).append(s)
+        self.prog["pages_total"] = self.prog.get("pages_done", 0) + len(by_page)
+        self._flush()
+        with ThreadPoolExecutor(max_workers=max(1, self.s.workers)) as ex:
+            futs = {ex.submit(self._page, g, sl): g for g, sl in by_page.items()}
+            for fu in as_completed(futs):
+                exc = fu.exception()
+                if exc:
+                    if isinstance(exc, LLMError):
+                        self._halt(f"LLM 오류로 중단: {exc}")
+                    else:
+                        with self.lock:
+                            self.page_errors.append(futs[fu])
+                        self.p.log("page_error", {"page": futs[fu], "error": repr(exc),
+                                                  "trace": "".join(traceback.format_exception(exc))[-2000:]},
+                                   batch=self.batch)
+                with self.lock:
+                    self.prog["pages_done"] += 1
+                self._autostop_check()
+                self._flush()
+
+    def _topup(self):
+        """실제 난이도(G5 판정으로 재분류된 값)가 목표보다 모자란 만큼 한 번 더 출제한다.
+        LLM이 상·최상을 하·중 수준으로 만드는 경향 때문에, 슬롯 배정만으로는 난이도 %가 지켜지지 않는다."""
+        target = Counter(s["difficulty"] for s in self.slots)
+        got = Counter(it["difficulty"] for it in self.p.items(batch=self.batch)
+                      if it["status"] in ("auto_pass", "warn", "approved"))
+        deficit = {lv: target[lv] - got.get(lv, 0) for lv in target if target[lv] > got.get(lv, 0)}
+        n = sum(deficit.values())
+        if not n or self.stop.is_set():
+            return
+        elig = [p for p in self.p.pages if not p["excluded"]]
+        used = {s["page"] for s in self.slots}
+        pages = [p for p in elig if p["g"] in used] or elig
+        alloc = allocate(pages, n)
+        start = self.p.next_sid_number()
+        extra = build_slots(self.p.pages, alloc, self.opts, difficulty_counts=deficit, start_index=start, seed=start)
+        for s in extra:
+            s["topup"] = True
+        self.slots += extra
+        self.p.set_batch_slots(self.batch, self.slots)
+        with self.lock:
+            self.prog["slots_total"] = len(self.slots)
+            self.prog["topup"] = {"deficit": deficit, "slots": len(extra)}
+        self.p.log("difficulty_topup", {"target": dict(target), "got": dict(got), "deficit": deficit,
+                                        "slots": len(extra)}, batch=self.batch)
+        self._process(extra)
 
     def _halt(self, msg: str):
         with self.lock:
@@ -217,6 +255,7 @@ class Pipeline:
                           next_label=pages[next_g]["label"] if next_g is not None else "",
                           next_text=_head(self.p.page_text(next_g)) if next_g is not None else "",
                           slots=[{"sid": s["sid"], "spec": slot_spec(s)} for s in chunk],
+                          related=_related(self.p, g) if any(s["difficulty"] in HARD for s in chunk) else [],
                           avoid=avoid, feedback=fb)
             system = render("generate_system.j2", rubric=criteria()["difficulty_rubric"])
             res = self.client.structured(system, user, schema.gen_schema(len(chunk)),
@@ -356,6 +395,14 @@ class Pipeline:
         item["status"] = "warn" if item["validation"]["warnings"] else "auto_pass"
         item["validation"]["fails"] = []
         item["validation"]["passed_at"] = now()
+        # 실제 난이도로 재분류: G5 판정이 한 단계 다르면 그 난이도로 매긴다(두 단계 이상은 G5에서 이미 탈락).
+        # 슬롯 목표는 difficulty_target에 남기고, 모자란 난이도는 배치 끝에 _topup()이 보충한다.
+        item["difficulty_target"] = item["slot"]["difficulty"]
+        lv = (item["validation"].get("G5") or {}).get("assessed_difficulty")
+        if lv in LEVELS and lv != item["difficulty"]:
+            item["difficulty"] = lv
+            item["validation"]["warnings"] = [w for w in item["validation"]["warnings"] if not w.startswith("G5[난이도] 표시")]
+            item["validation"]["warnings"].append(f"난이도 재분류: 목표 '{item['difficulty_target']}' → 실제 '{lv}'")
         integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)
         self.p.save_item(item, "auto_accept", {"status": item["status"], "attempts": item["validation"]["attempts"]})
@@ -374,6 +421,16 @@ def _neighbor(pages, g, step):
     if 0 <= j < len(pages) and pages[j]["src"] == pages[g]["src"]:
         return j
     return None
+
+
+def _related(project, g: int, k: int = 3, max_chars: int = 1500) -> list[dict]:
+    """상·최상 슬롯용 관련 페이지: 같은 원고·같은 차시에서 출제 대상 앞뒤 ±1을 뺀 가까운 페이지 k장."""
+    pages = project.pages
+    base = pages[g]
+    cands = [p for p in pages if p["src"] == base["src"] and p["chasi"] == base["chasi"] and not p["excluded"]
+             and abs(p["g"] - g) > 1]
+    cands.sort(key=lambda p: abs(p["g"] - g))
+    return [{"label": p["label"], "text": project.page_text(p["g"])[:max_chars]} for p in sorted(cands[:k], key=lambda p: p["g"])]
 
 
 def _tail(text, n=600):

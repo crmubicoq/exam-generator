@@ -13,6 +13,7 @@ defaults:
   numbering: continuous        # continuous(양식 연번) | per_type(지침 유형별)
   subject_prefix: false
   max_retries: 3
+  difficulty_topup: true      # 배치 끝에 실제 난이도가 모자란 만큼 한 번 더 출제
   workers: 3
 
 type_names: {mcq: 선다형, ox: 진위형, short: 단답형}

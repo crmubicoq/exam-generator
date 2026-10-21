@@ -140,6 +140,8 @@ def test_combo_builder_balance():
         assert sets[pos - 1] == correct and len({tuple(s) for s in sets}) == 4
         if len(correct) < 4:
             assert any(len(s) == len(correct) for i, s in enumerate(sets) if i != pos - 1)
+        # 거짓 진술 하나만 찾아서는 정답을 고를 수 없어야 한다 (자체 평가 K00016)
+        assert choice_builder.shortcut_problems(correct, [s for i, s in enumerate(sets) if i != pos - 1]) == []
 
 
 # ---------- G4 비교 ----------
@@ -198,7 +200,9 @@ def test_mock_pipeline_and_evidence_pdf(sample_project, tmp_path):
     slots = build_slots(sample_project.pages, allocate(sample_project.pages, 20), opts)
     b = start_batch(sample_project, LLMSettings(provider="mock", workers=2), slots, opts, background=False)
     pr = sample_project.read_progress(b)
-    assert pr["status"] == "done" and pr["accepted"] + pr["manual"] <= 20
+    # 실제 난이도가 모자라면 배치 끝에 보충 슬롯이 추가된다(slots_total ≥ 20)
+    assert pr["status"] == "done" and pr["accepted"] + pr["manual"] <= pr["slots_total"]
+    assert pr["slots_total"] == 20 or pr.get("topup")
     items = sample_project.items(batch=b)
     passed = [it for it in items if it["status"] in ("auto_pass", "warn")]
     assert passed and all(it["source_pages"] for it in passed)

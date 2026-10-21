@@ -227,6 +227,9 @@ def test_c14_combo_choices_checked():
     assert any("정답 위치" in f for f in schema.check_structure(item, slot))
     item["answer"] = "1"
     assert schema.check_structure(item, slot) == []
+    # 오답이 모두 거짓 진술 ㄷ 또는 ㄹ을 포함하면(일부만 고른 오답 ['ㄱ']이 없으면) 지름길
+    item["choices"] = [{"labels": x} for x in (["ㄱ", "ㄴ"], ["ㄱ", "ㄷ"], ["ㄴ", "ㄷ"], ["ㄷ", "ㄹ"])]
+    assert any("조합형 보기" in f for f in schema.check_structure(item, slot))
 
 
 # ---------- C16: 규칙 ----------

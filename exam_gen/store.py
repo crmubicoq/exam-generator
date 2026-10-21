@@ -320,6 +320,15 @@ class Project:
                 c.execute("UPDATE batches SET status=?, summary=? WHERE batch=?",
                           (status, json.dumps(summary, ensure_ascii=False), batch))
 
+    def set_batch_slots(self, batch: int, slots: list[dict]):
+        with _LOCK, self._conn() as c:
+            c.execute("UPDATE batches SET slots=? WHERE batch=?", (json.dumps(slots, ensure_ascii=False), batch))
+
+    def next_sid_number(self) -> int:
+        """모든 배치에서 쓰지 않은 다음 슬롯 번호."""
+        nums = [int(s["sid"][1:]) for b in self.batches() for s in b["slots"] if s["sid"][1:].isdigit()]
+        return max(nums, default=0) + 1
+
     def next_key(self) -> str:
         with self._conn() as c:
             n = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]

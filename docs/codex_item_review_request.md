@@ -11,7 +11,7 @@
 | 항목 | 위치 |
 |---|---|
 | 원고(샘플 교재 17~42쪽) | `input_17-43.pdf` (PDF 1쪽 = 책 17쪽) |
-| 개선 후 출제 문항 | `projects/샘플_Codex_개선/items.sqlite` — `items` 테이블의 `data` 열(JSON). 엑셀·근거PDF는 `projects/샘플_Codex_개선/exports/` |
+| 개선 후 출제 문항 | `projects/샘플_Claude_개선/items.sqlite` — `items` 테이블의 `data` 열(JSON). Claude Sonnet 5.5로 출제, 통과 43문항(난이도 보충 14문항 포함) |
 | 개선 전 출제 문항(비교용) | `projects/샘플_Codex_테스트/items.sqlite` |
 | 기준 문서 | `문항 출제 전문가_지침.txt`, `평가문항 출제 유의사항.docx`, `엑셀_출력 형식(양식).xlsx` |
 | 출제 규칙(프롬프트) | `exam_gen/llm/prompts/generate_system.j2` |
@@ -19,7 +19,7 @@
 문항 JSON 읽는 법은 아래와 같다. `status`가 `auto_pass`·`warn`·`approved`인 문항만 검수하고, `manual`(자동 검증 탈락)은 참고만 한다.
 ```python
 import sqlite3, json
-rows = sqlite3.connect("projects/샘플_Codex_개선/items.sqlite").execute("select data from items").fetchall()
+rows = sqlite3.connect("projects/샘플_Claude_개선/items.sqlite").execute("select data from items").fetchall()
 items = [json.loads(r[0]) for r in rows]
 # 주요 필드: key, type(mcq/ox/short), difficulty(실제 난이도), difficulty_target(목표), stem, statements(조합형),
 #           choices[{text,is_true}], answer, short_variants, explanation,
@@ -46,7 +46,7 @@ items = [json.loads(r[0]) for r in rows]
 - **원고 전반 출제**: 26쪽 전체에 고르게 나왔는가. 특정 쪽에 몰리거나 빠진 곳은 없는가.
 - **중복**: 판단 포인트가 사실상 같은 문항이 있는가.
 - **분포**: 난이도·유형·정답 위치(①~④)·O/X 비율이 지침과 출제 옵션(난이도 최상5·상15·중60·하20 %, 유형 선다50·진위30·단답20 %, 옳은 것 고르기 20 : 옳지 않은 것 고르기 80)에 맞는가.
-- **개선 전후 비교**: 개선 전 프로젝트(`샘플_Codex_테스트`)에서 지적된 문제가 줄었는가. 지적된 문제는 발문 비질문형 12/13, '원고' 노출 12, 실제 난이도 '하' 쏠림(27문항 중 20), 상식으로 걸러지는 오답 6, 조합형 지름길 1이다. 같은 집계를 `python -m exam_gen.quality_report 샘플_Codex_테스트 샘플_Codex_개선`으로 볼 수 있다.
+- **개선 전후 비교**: 개선 전 프로젝트(`샘플_Codex_테스트`)에서 지적된 문제가 줄었는가. 지적된 문제는 발문 비질문형 12/13, '원고' 노출 12, 실제 난이도 '하' 쏠림(27문항 중 20), 상식으로 걸러지는 오답 6, 조합형 지름길 1이다. 같은 집계를 `python -m exam_gen.quality_report 샘플_Codex_테스트 샘플_Claude_개선`으로 볼 수 있다. 자동 등급(특히 '변별력' 72%)은 검수 AI의 경고를 그대로 센 값이므로, 그 지적이 타당한지도 판정해 달라.
 - **출제 규칙 자체의 문제**: 반복되는 결함이 프롬프트(`generate_system.j2`)나 검증 코드(`exam_gen/validate/rules.py` 등)의 규칙 누락에서 오는지, 고칠 규칙을 제안한다.
 
 ## 5. 보고 형식

@@ -79,11 +79,41 @@ with left:
 
 if not view:
     st.stop()
-idx = sel.selection.rows[0] if sel and sel.selection.rows else 0
-saved = view[min(idx, len(view) - 1)]          # 저장된 상태(미리보기·승인 판단용)
+
+if st.session_state.get("review_flash"):  # 직전 승인·삭제 결과 알림(다시 그린 뒤에도 보이게)
+    st.toast(st.session_state.pop("review_flash"), icon=":material/check_circle:")
+
+# ---------- 현재 문항: 문항 키로 기억 (필터가 바뀌거나 승인한 문항이 목록에서 빠져도 위치 유지) ----------
+keys = [x["key"] for x in view]
+tsel = sel.selection.rows[0] if sel and sel.selection.rows else None
+if tsel is not None and tsel != st.session_state.get("review_tsel"):
+    st.session_state["review_key"] = keys[tsel]  # 표에서 새로 고른 문항
+st.session_state["review_tsel"] = tsel
+if st.session_state.get("review_key") not in keys:
+    st.session_state["review_key"] = keys[0]
+pos = keys.index(st.session_state["review_key"])
+
+
+def _go(to: int):
+    st.session_state["review_key"] = keys[max(0, min(to, len(keys) - 1))]
+
+
+def _next_key_after_leave() -> str | None:
+    """승인·삭제로 현재 문항이 목록에서 빠질 수 있으므로 다음(없으면 이전) 문항 키를 미리 정해 둔다."""
+    return keys[pos + 1] if pos + 1 < len(keys) else (keys[pos - 1] if pos > 0 else None)
+
+
+saved = view[pos]                                 # 저장된 상태(미리보기·승인 판단용)
 it = copy.deepcopy(saved)                         # 편집용 사본
 
 with right:
+    n1, n2, n3 = st.columns([1, 2, 1])
+    n1.button("이전", icon=":material/chevron_left:", width="stretch", disabled=pos == 0,
+              on_click=_go, args=(pos - 1,), key="nav_prev")
+    n2.markdown(f"<div style='text-align:center;padding-top:0.4rem'>{pos + 1} / {len(keys)}</div>",
+                unsafe_allow_html=True)
+    n3.button("다음", icon=":material/chevron_right:", width="stretch", disabled=pos == len(keys) - 1,
+              on_click=_go, args=(pos + 1,), key="nav_next")
     st.markdown(f"### {it['key']} · {ui.status_badge(it['status'])}")
     st.caption(f"{it.get('chasi')}차시 · {ui.TYPE_KO[it['type']]}"
                + (" 조합형" if it.get("statements") else "")
@@ -158,8 +188,13 @@ with right:
             st.rerun()
         if b[1].button("승인", type="primary", width="stretch", disabled=not who or it["status"] == "deleted"):
             ok, fails = review_ops.approve(p, it["key"], who, evidence_confirmed=confirm)
-            (st.toast("승인했다", icon=":material/check_circle:") if ok else st.error("승인 불가: " + "; ".join(fails)))
-            st.rerun()
+            if ok:  # 승인하면 다음 문항으로 넘어간다
+                st.session_state["review_flash"] = f"{it['key']} 승인했다"
+                if _next_key_after_leave():
+                    st.session_state["review_key"] = _next_key_after_leave()
+                st.rerun()
+            else:  # 막힌 이유가 사라지지 않도록 다시 그리지 않는다
+                st.error("승인 불가: " + "; ".join(fails), icon=":material/block:")
         if b[2].button("LLM 재검증", width="stretch", help="G4 독립 풀이 + G5 검수를 다시 실행"):
             with st.spinner("재검증 중…"):
                 review_ops.rerun_llm_gates(p, llm_settings.load(), it["key"])
@@ -167,6 +202,9 @@ with right:
         if it["status"] != "deleted":
             if b[3].button("삭제", width="stretch"):
                 review_ops.set_status(p, it["key"], "deleted", note)
+                st.session_state["review_flash"] = f"{it['key']} 삭제했다"
+                if _next_key_after_leave():
+                    st.session_state["review_key"] = _next_key_after_leave()
                 st.rerun()
         elif b[3].button("복원", width="stretch"):
             review_ops.set_status(p, it["key"], "restore", note)

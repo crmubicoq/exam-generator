@@ -18,5 +18,6 @@ PAGES = {
 }
 
 nav = st.navigation(PAGES)
+st.markdown("<style>.block-container{padding-top:2.2rem;padding-bottom:1rem}</style>", unsafe_allow_html=True)
 ui.render_sidebar()
 nav.run()

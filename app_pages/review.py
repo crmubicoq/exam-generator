@@ -2,6 +2,7 @@
 import copy
 import html
 import re
+from collections import Counter
 
 import pandas as pd
 import streamlit as st
@@ -17,8 +18,20 @@ try:  # 검수 화면 PDF 뷰어(선택 패키지) — 없으면 페이지 이�
 except ImportError:
     pdf_viewer = None
 
-PAGE_SIZE = 12
+PAGE_SIZE = 50          # 목록 한 쪽에 담는 문항 수
+LIST_H = 660            # 왼쪽 목록 상자 높이(px) — 안에서만 스크롤
+BODY_H = 480            # 오른쪽 문항 본문 상자 높이(px)
 CIRCLED = "①②③④"
+QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "auto": ("자동통과", ("auto_pass",)),
+          "done": ("승인", ("approved",)), "del": ("삭제", ("deleted",)),
+          "all": ("전체", ("manual", "warn", "auto_pass", "approved", "deleted"))}
+_ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:material/task_alt:]",
+         "warn": ":orange[:material/warning:]", "manual": ":red[:material/error:]", "deleted": ":gray[:material/delete:]"}
+_LIST_CSS = """<style>
+.st-key-review_list, .st-key-review_list [data-testid="stVerticalBlock"] {gap:0.1rem !important;}
+.st-key-review_list button {justify-content:flex-start; text-align:left; min-height:2rem; padding:0.1rem 0.6rem;}
+.st-key-review_list button p {white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.85em;}
+</style>"""
 
 
 def _label(it) -> str:
@@ -45,7 +58,8 @@ def _s(v) -> str:
 
 
 p = ui.require_project(ui.current_project())
-ui.header("검수", "fact_check", "자동 검증(G1~G6)을 통과한 문항도 사람이 승인해야 최종 출력에 들어간다.")
+st.markdown("### :material/fact_check: 검수 &nbsp;<span style='font-size:0.55em;color:#888;font-weight:400'>"
+            "자동 검증(G1~G6)을 통과한 문항도 사람이 승인해야 최종 출력에 들어간다</span>", unsafe_allow_html=True)
 
 items = p.items()
 if not items:
@@ -56,22 +70,28 @@ pages = p.pages
 if st.session_state.get("review_flash"):  # 직전 승인·삭제 결과 알림(다시 그린 뒤에도 보이게)
     st.toast(st.session_state.pop("review_flash"), icon=":material/check_circle:")
 
-# ---------- 필터 ----------
-c = st.columns([2, 1.2, 1.2, 1, 1.2, 1.6])
-f_status = c[0].multiselect("상태", list(ui.STATUS_KO), default=["manual", "warn", "auto_pass"],
-                            format_func=lambda s: ui.STATUS_KO[s])
-f_type = c[1].multiselect("유형", list(ui.TYPE_KO), format_func=lambda t: ui.TYPE_KO[t])
-f_diff = c[2].multiselect("난이도", ["최상", "상", "중", "하"])
-f_chasi = c[3].multiselect("차시", sorted({it.get("chasi") for it in items}))
-f_page = c[4].multiselect("책 쪽수", [x["label"] for x in pages])
-f_text = c[5].text_input("검색(발문·키)")
+# ---------- 검수 진행률 · 대기열 · 상세 필터 ----------
+cnt = Counter(it["status"] for it in items)
+active = len(items) - cnt.get("deleted", 0)
+st.progress(cnt.get("approved", 0) / active if active else 0.0,
+            text=f"검수 진행 — 승인 {cnt.get('approved', 0)} / {active}문항 (삭제 제외)")
+q1, q2 = st.columns([4, 1], vertical_alignment="center")
+queue = q1.segmented_control(
+    "검수 대기열", list(QUEUES), default="todo", key="review_queue", label_visibility="collapsed",
+    format_func=lambda k: f"{QUEUES[k][0]} {sum(cnt.get(s, 0) for s in QUEUES[k][1])}") or "todo"
+with q2.popover("상세 필터", icon=":material/filter_list:", width="stretch"):
+    f_type = st.multiselect("유형", list(ui.TYPE_KO), format_func=lambda t: ui.TYPE_KO[t])
+    f_diff = st.multiselect("난이도", ["최상", "상", "중", "하"])
+    f_chasi = st.multiselect("차시", sorted({it.get("chasi") for it in items}))
+    f_page = st.multiselect("책 쪽수", [x["label"] for x in pages])
+    f_text = st.text_input("검색(발문·키)")
 view = [it for it in items
-        if (not f_status or it["status"] in f_status) and (not f_type or it["type"] in f_type)
+        if it["status"] in QUEUES[queue][1] and (not f_type or it["type"] in f_type)
         and (not f_diff or it["difficulty"] in f_diff) and (not f_chasi or it.get("chasi") in f_chasi)
         and (not f_page or _label(it) in f_page)
         and (not f_text or f_text in it.get("stem", "") or f_text == it["key"])]
 if not view:
-    st.info(f"조건에 맞는 문항이 없다(전체 {len(items)}문항).")
+    st.info(f"'{QUEUES[queue][0]}' 대기열에 문항이 없다.", icon=":material/inbox:")
     st.stop()
 
 # ---------- 현재 문항: 문항 키로 기억 (필터가 바뀌거나 승인한 문항이 목록에서 빠져도 위치 유지) ----------
@@ -105,18 +125,16 @@ left, right = st.columns([3, 7], gap="large")
 with left:
     n_pages = (len(view) - 1) // PAGE_SIZE + 1
     lp = pos // PAGE_SIZE
-    st.markdown(f"**문항 {len(view)}개** · 전체 {len(items)}")
-    for x in view[lp * PAGE_SIZE:(lp + 1) * PAGE_SIZE]:
-        cur = x["key"] == saved["key"]
-        with st.container(border=True):
-            a, b = st.columns([5, 1], vertical_alignment="center")
-            a.markdown(f"**{x['key']}** {ui.status_badge(x['status'])}"
-                       + (" :blue-badge[:material/visibility: 보는 중]" if cur else "")
-                       + f"  \n:gray[{ui.TYPE_KO[x['type']]} · {x['difficulty']} · p.{_pages_of(x)}]"
-                       + "<div style='white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.85em;"
-                       + f"color:#555'>{html.escape(_plain(x.get('stem', '')))}</div>", unsafe_allow_html=True)
-            b.button("", icon=":material/chevron_right:", key=f"pick_{x['key']}", disabled=cur,
-                     on_click=_pick, args=(x["key"],), help="이 문항 보기")
+    st.markdown(_LIST_CSS, unsafe_allow_html=True)
+    st.caption(f"{QUEUES[queue][0]} {len(view)}문항" + (f" · 목록 {lp + 1}/{n_pages}" if n_pages > 1 else ""))
+    # 고정 높이 상자 안에서만 스크롤 — 문항이 300개여도 페이지가 길어지지 않는다
+    with st.container(height=LIST_H, key="review_list"):
+        for x in view[lp * PAGE_SIZE:(lp + 1) * PAGE_SIZE]:
+            cur = x["key"] == saved["key"]
+            label = (f"{_ICON.get(x['status'], '')} **{x['key']}** · {ui.TYPE_KO[x['type']][:2]}·{x['difficulty']}"
+                     f" · p.{_pages_of(x)} · {_plain(x.get('stem', ''))[:40]}")
+            st.button(label, key=f"pick_{x['key']}", type="primary" if cur else "tertiary", width="stretch",
+                      on_click=_pick, args=(x["key"],), help=x.get("stem", "")[:200])
     if n_pages > 1:
         l1, l2, l3 = st.columns([1, 2, 1], vertical_alignment="center")
         l1.button("", icon=":material/keyboard_double_arrow_left:", key="list_prev", disabled=lp == 0,
@@ -157,7 +175,8 @@ with right:
         reasons = integrity.block_reasons(saved)
         need_conf = integrity.needs_evidence_confirm(saved)
         a1, a2, a3, a4 = st.columns([2, 1.2, 1.2, 1.2], vertical_alignment="bottom")
-        who = a1.text_input("검수자", value=st.session_state.get("who", ""), placeholder="이름을 입력해야 승인할 수 있다")
+        who = a1.text_input("검수자", value=st.session_state.get("who", ""), placeholder="검수자 이름(승인에 필요)",
+                            label_visibility="collapsed")
         st.session_state["who"] = who
         confirm = False
         if need_conf:
@@ -192,7 +211,7 @@ with right:
         st.error(f, icon=":material/block:")
     warns = saved["validation"].get("warnings", [])
     if warns:
-        with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=len(warns) <= 3):
+        with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=False):
             for w in warns:
                 st.markdown(f"- {w}")
 
@@ -200,17 +219,18 @@ with right:
                                                    ":material/rule: 검증 상세", ":material/history: 이력"])
 
     # --- 문항 읽기 (시험지 형태) ---
-    with tab_q:
+    with tab_q, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         with st.container(border=True):
             st.markdown(f"<div style='font-size:1.15em;font-weight:600;line-height:1.6'>"
                         f"{html.escape(saved.get('stem', ''))}</div>", unsafe_allow_html=True)
-            for s in saved.get("statements") or []:
-                st.markdown(f"**{s['label']}.** {s['text']}")
+            lines = [f"**{s['label']}.** {s['text']}" for s in saved.get("statements") or []]
             if saved["type"] == "mcq":
                 for i, ch in enumerate(saved.get("choices") or []):
                     is_ans = str(i + 1) == str(saved["answer"])
                     mark = " :green-badge[:material/check: 정답]" if is_ans else ""
-                    st.markdown(f"{CIRCLED[i]} {'**' + ch['text'] + '**' if is_ans else ch['text']}{mark}")
+                    lines.append(f"{CIRCLED[i]} {'**' + ch['text'] + '**' if is_ans else ch['text']}{mark}")
+            if lines:  # 한 블록으로 묶어 줄 간격을 좁힌다
+                st.markdown("  \n".join(lines))
             elif saved["type"] == "ox":
                 st.markdown(f"정답 :green-badge[{saved['answer']}]")
             else:
@@ -277,7 +297,7 @@ with right:
                 st.rerun()
 
     # --- 원고 근거 ---
-    with tab_src:
+    with tab_src, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         # 미리보기는 저장된 문항(근거 매칭 결과 포함) 기준 — 편집 중 내용은 저장하면 다시 매칭된다 (Codex C8)
         gs = saved.get("source_pages") or ([saved["page"]] if saved.get("page") is not None else [])
         if not gs:
@@ -292,14 +312,14 @@ with right:
             if viewer:
                 pdf, anns, _ = item_viewer_payload(p, saved)
                 pdf_viewer(pdf, annotations=anns, scroll_to_annotation=1 if anns else None, render_text=True,
-                           annotation_outline_size=3, height=900,
+                           annotation_outline_size=3, height=BODY_H - 70,
                            key=f"pdf_{saved['key']}_{saved.get('updated', '')}")
             else:
                 for g in gs:
                     st.image(render_item_page(p, saved, g), caption=f"원고 p.{pages[g]['label']}", width="stretch")
 
     # --- 검증 상세 ---
-    with tab_check:
+    with tab_check, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         g4 = saved["validation"].get("G4")
         if g4:
             st.markdown(f"**G4 독립 풀이**: 답 `{g4.get('answer')}` (출제 정답 `{saved['answer']}`) · "
@@ -320,7 +340,7 @@ with right:
         st.markdown(f"**난이도 근거**: {saved.get('difficulty_basis', '')}  \n**판단 포인트**: {saved.get('key_point', '')}")
 
     # --- 이력 ---
-    with tab_hist:
+    with tab_hist, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         ev = p.events(key=saved["key"], limit=50)
         st.dataframe(pd.DataFrame([{"시각": e["ts"], "작업": e["kind"], "내용": str(e["detail"])[:200]} for e in ev]),
                      hide_index=True, width="stretch")

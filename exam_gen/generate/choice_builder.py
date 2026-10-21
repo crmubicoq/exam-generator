@@ -6,6 +6,7 @@
 - 거짓 진술 하나만 찾아도 정답이 나오지 않게 한다(2026-10-21 자체 평가 K00016):
   · 정답 조합의 일부만 고른 오답(거짓 진술 없음)을 최소 1개 둔다 — 참 진술도 모두 확인해야 고를 수 있다.
   · 거짓 진술마다, 그 진술이 들어 있지 않은 오답을 최소 1개 둔다.
+  · 정답 라벨이 보기 전체에서 가장 자주 나오지 않게 한다(빈도 단서, 2026-10-21 Codex 문항 검수).
 """
 from __future__ import annotations
 
@@ -51,6 +52,11 @@ def shortcut_problems(correct: list[str], distractors: list[list[str]]) -> list[
     for f in false:
         if all(f in d for d in distractors):
             out.append(f"모든 오답에 거짓 진술 {f}가 들어 있음 — {f}만 판별하면 정답이 나옴")
+    # 라벨 빈도 단서(Codex 문항 검수 K00012): 보기 4개에서 가장 자주 나온 라벨들이 곧 정답 조합이면 안 된다
+    if false and correct:
+        counts = {lb: sum(lb in s for s in [correct, *distractors]) for lb in LABELS}
+        if min(counts[lb] for lb in correct) > max(counts[lb] for lb in false):
+            out.append("정답 조합의 라벨이 보기 전체에서 가장 자주 나옴 — 빈도만 세면 정답이 나옴")
     return out
 
 

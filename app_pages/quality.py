@@ -4,11 +4,11 @@ import streamlit as st
 
 from exam_gen import ui
 from exam_gen.config import criteria
-from exam_gen.quality_report import GRADE_RULES, LEVELS, actual_difficulty, analyze
+from exam_gen.quality_report import EXTRA_CATS, GRADE_RULES, LEVELS, actual_difficulty, analyze
 
 GRADE_COLOR = {"A": "#1a7f37", "B": "#0969da", "C": "#bc4c00", "D": "#cf222e"}
 GRADE_TEXT = {"A": "납품 수준", "B": "경미한 보완", "C": "보완 필요", "D": "재출제 권장"}
-CAT_KO = {k: v[0] for k, v in GRADE_RULES.items()}
+CAT_KO = {k: v[0] for k, v in GRADE_RULES.items()} | EXTRA_CATS
 ACTION = {
     "accuracy": "검수 화면에서 해당 문항을 수정하거나 삭제한다.",
     "dispute": "검수 화면에서 '일반적으로', '가장 거리가 먼' 같은 단서 문구를 넣거나 문항을 삭제한다.",
@@ -97,7 +97,7 @@ for key, cats in r["issues"].items():
                                "난이도": actual_difficulty(it), "내용": m[:160], "_cat": cat})
 if issue_rows:
     df_i = pd.DataFrame(issue_rows)
-    pick = st.pills("항목", [CAT_KO[k] for k in GRADE_RULES if any(x["_cat"] == k for x in issue_rows)],
+    pick = st.pills("항목", [CAT_KO[k] for k in CAT_KO if any(x["_cat"] == k for x in issue_rows)],
                     selection_mode="multi", key="q_cats")
     if pick:
         df_i = df_i[df_i["항목"].isin(pick)]
@@ -116,3 +116,4 @@ with st.expander("등급 기준과 계산 방법", icon=":material/info:"):
     st.markdown("\n".join(f"- **{name}**: {desc} — A ≤ {c[0]:.0%} · B ≤ {c[1]:.0%} · C ≤ {c[2]:.0%} · 그 이상 D"
                           for name, desc, c in GRADE_RULES.values()))
     st.caption("자동 검증(G1~G6)을 통과한 문항만 집계한다. 등급은 사람 검수를 대신하지 않으며, 무엇을 먼저 볼지 정하는 데 쓴다.")
+    st.caption("'보기 다듬기(참고)'는 정답을 고르는 데 영향이 없는 검수 AI의 보기 수정 제안으로, 등급에 넣지 않는다.")

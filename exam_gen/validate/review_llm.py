@@ -65,6 +65,18 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
     return verdicts
 
 
+def relabel_difficulty(item: dict) -> None:
+    """G5 판정 난이도가 표시와 한 단계 다르면 그 난이도로 매긴다. 슬롯 목표는 difficulty_target에 남긴다."""
+    item["difficulty_target"] = item.get("difficulty_target") or item["slot"]["difficulty"]
+    lv = (item["validation"].get("G5") or {}).get("assessed_difficulty")
+    warns = [w for w in item["validation"].get("warnings", []) if not w.startswith(("G5[난이도] 표시", "난이도 재분류"))]
+    if lv in LEVELS and lv != item["difficulty"]:
+        item["difficulty"] = lv
+    if item["difficulty"] != item["difficulty_target"]:
+        warns.append(f"난이도 재분류: 목표 '{item['difficulty_target']}' → 실제 '{item['difficulty']}'")
+    item["validation"]["warnings"] = warns
+
+
 def merge_variants(item: dict) -> list[str]:
     """단답형: G5가 제안한 허용 답안을 short_variants에 합친다. 추가한 표현을 반환(검수 화면·경고에 표시)."""
     if item.get("type") != "short":

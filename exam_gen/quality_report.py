@@ -27,12 +27,15 @@ GRADE_RULES = {
     "evidence": ("출처(근거)", "원문과 글자 단위로 일치하지 않는 근거 비율(L1·미매칭)", [0.05, 0.15, 0.30]),
     "coverage": ("원고 전반 출제", "문항이 없는 출제 대상 페이지 비율", [0.0, 0.05, 0.15]),
     "format": ("형식·지침", "지침 형식 위반·경고가 있는 문항 비율", [0.05, 0.15, 0.30]),
-    "discrimination": ("변별력(보기)", "상식으로 정답이 보이는 보기·조합형 지름길 문항 비율", [0.10, 0.25, 0.40]),
+    "discrimination": ("변별력(보기)", "검수 AI가 '정답 단서'로 지적한 보기·조합형 지름길 문항 비율 — 실제 응시 결과가 아니라 "
+                       "경고 집계다('보완 권장' 경고는 제외, 구분 도입 전 출제분은 보기 경고 전체)", [0.10, 0.25, 0.40]),
     "difficulty": ("난이도 분포", "목표 대비 실제 난이도(검수 판정) 분포 차이(총변동거리)", [0.10, 0.20, 0.35]),
 }
 _FORMAT_PREFIXES = ("G3:",)
 _ACCURACY_TAGS = ("G5[정답]",)
 _DISPUTE_TAGS = ("G5[이의 제기 여지]",)
+# 등급에 넣지 않는 참고 범주: 정답 선택에 영향이 없는 보기 다듬기 제안(Codex 문항 검수 2026-10-21)
+EXTRA_CATS = {"polish": "보기 다듬기(참고)"}
 
 
 def actual_difficulty(it: dict) -> str:
@@ -62,7 +65,7 @@ def _issues(it: dict) -> dict[str, list[str]]:
         elif w.startswith(_DISPUTE_TAGS):
             add("dispute", w)
         elif w.startswith("G5[보기]"):
-            add("discrimination", w)
+            add("polish" if w.removeprefix("G5[보기]").strip().startswith("보완 권장") else "discrimination", w)
         elif w.startswith(_FORMAT_PREFIXES) or w.startswith(("G5[오타·비문]", "G5[조건 누락]", "G5[해설]")):
             add("format", w)
     if it["type"] == "mcq" and not it["stem"].rstrip().endswith("?"):

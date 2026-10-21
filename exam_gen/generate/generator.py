@@ -395,14 +395,8 @@ class Pipeline:
         item["status"] = "warn" if item["validation"]["warnings"] else "auto_pass"
         item["validation"]["fails"] = []
         item["validation"]["passed_at"] = now()
-        # 실제 난이도로 재분류: G5 판정이 한 단계 다르면 그 난이도로 매긴다(두 단계 이상은 G5에서 이미 탈락).
-        # 슬롯 목표는 difficulty_target에 남기고, 모자란 난이도는 배치 끝에 _topup()이 보충한다.
-        item["difficulty_target"] = item["slot"]["difficulty"]
-        lv = (item["validation"].get("G5") or {}).get("assessed_difficulty")
-        if lv in LEVELS and lv != item["difficulty"]:
-            item["difficulty"] = lv
-            item["validation"]["warnings"] = [w for w in item["validation"]["warnings"] if not w.startswith("G5[난이도] 표시")]
-            item["validation"]["warnings"].append(f"난이도 재분류: 목표 '{item['difficulty_target']}' → 실제 '{lv}'")
+        # 실제 난이도로 재분류(두 단계 이상 차이는 G5에서 이미 탈락). 모자란 난이도는 배치 끝에 _topup()이 보충한다.
+        review_llm.relabel_difficulty(item)
         review_llm.merge_variants(item)  # 단답형 허용 답안(G5 제안) — 검증 기록 전에 합쳐 내용 해시에 포함
         integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)

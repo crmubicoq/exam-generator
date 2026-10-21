@@ -271,3 +271,32 @@ def test_verifier_missing_results_are_reasked(sample_project):
     v = review_llm.review(Flaky(), MOCK, sample_project, [item, dict(item)])
     assert calls == [["1", "2"], ["1"]]
     assert v["1"][0] == [] and v["2"][0] == []
+
+
+# ---------- Codex 문항 교차 검수(2026-10-21) ----------
+def test_combo_label_frequency_shortcut():
+    from exam_gen.generate.choice_builder import shortcut_problems
+    correct = ["ㄱ", "ㄴ", "ㄹ"]
+    # 재출제 K00012: ㄱ·ㄴ·ㄹ 각 3회, ㄷ 2회 → 최빈 라벨 = 정답
+    assert any("빈도" in m for m in shortcut_problems(correct, [["ㄱ", "ㄹ"], ["ㄱ", "ㄴ", "ㄷ"], ["ㄴ", "ㄷ", "ㄹ"]]))
+    # Codex 제안 대체 보기: ㄱ3·ㄴ3·ㄷ2·ㄹ2 → 단서 없음
+    assert shortcut_problems(correct, [["ㄱ", "ㄴ", "ㄷ"], ["ㄴ", "ㄹ"], ["ㄱ", "ㄷ"]]) == []
+
+
+def test_choice_polish_warnings_not_counted_as_discrimination():
+    from exam_gen.quality_report import _issues
+    item = {"type": "mcq", "stem": "다음 중 옳은 것은?", "evidence": [], "choices": [],
+            "validation": {"warnings": ["G5[보기] 보완 권장: 보기 길이를 맞추면 좋다",
+                                        "G5[보기] 정답 단서: 정답에만 상황 단서가 있다"]}}
+    out = _issues(item)
+    assert len(out["polish"]) == 1 and len(out["discrimination"]) == 1
+    item["validation"]["warnings"] = ["G5[보기] 오답이 쉽다"]  # 구분 도입 전 경고는 보수적으로 결함으로 센다
+    assert "discrimination" in _issues(item)
+
+
+def test_llm_recheck_relabels_difficulty_like_generation():
+    item = {"difficulty": "최상", "slot": {"difficulty": "최상"},
+            "validation": {"G5": {"assessed_difficulty": "상"}, "warnings": ["G5[난이도] 표시 '최상' / 검수 판정 '상'"]}}
+    review_llm.relabel_difficulty(item)
+    assert item["difficulty"] == "상" and item["difficulty_target"] == "최상"
+    assert item["validation"]["warnings"] == ["난이도 재분류: 목표 '최상' → 실제 '상'"]

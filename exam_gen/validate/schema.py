@@ -96,6 +96,21 @@ def check_structure(item: dict, slot: dict) -> list[str]:
                 f.append(f"G1: 참 진술 수({n_true})가 슬롯 지정값({slot.get('combo_true')})과 다름")
             if n_true == 0:
                 f.append("G1: 참 진술이 없음")
+            # 최종 보기 검사 (Codex C14): 보기 4개, 서로 다른 조합, 정답 조합 = 참 진술 집합, 정답 위치 = 슬롯
+            ch = item.get("choices") or []
+            correct = sorted((s["label"] for s in st if s.get("is_true")), key=LABELS.index)
+            sets = [sorted(c.get("labels") or [x.strip() for x in c.get("text", "").split(",") if x.strip()],
+                           key=lambda x: LABELS.index(x) if x in LABELS else 9) for c in ch]
+            if len(ch) != 4:
+                f.append("G1: 조합형 보기가 4개가 아님")
+            elif len({tuple(x) for x in sets}) != 4:
+                f.append("G1: 조합형 보기 조합이 중복됨")
+            else:
+                hits = [i + 1 for i, x in enumerate(sets) if x == correct]
+                if len(hits) != 1:
+                    f.append("G1: 참 진술 조합과 일치하는 보기가 정확히 하나가 아님")
+                elif str(hits[0]) != str(item.get("answer")) or str(item.get("answer")) != str(slot["answer"]):
+                    f.append(f"G1: 조합형 정답 위치 불일치(보기 {hits[0]}, 정답 {item.get('answer')}, 슬롯 {slot['answer']})")
     else:
         ch = item.get("choices") or []
         if len(ch) != 4:

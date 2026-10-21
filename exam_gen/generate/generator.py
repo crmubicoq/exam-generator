@@ -5,13 +5,22 @@
   최종 출력에는 사람이 승인(approved)한 문항만 들어간다(G7, output 모듈).
 
 상태 값: auto_pass(G1~G6 통과·경고 없음) / warn(통과했지만 경고 있음) / manual(수동 확인) / approved / deleted
+배치 상태: running / done / partial(일부 페이지 오류·미처리 슬롯) / stopped / error — partial·stopped·error는 '이어서 출제' 가능
+
+중지되면 검증이 끝나지 않은 후보는 저장하지 않는다. 그 슬롯은 저장된 문항이 없으므로 재개 시 다시 출제된다.
 """
 from __future__ import annotations
 
+import ctypes
+import os
 import threading
+import time
 import traceback
+import uuid
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from .. import integrity
 from ..config import PROMPT_VERSION, criteria
 from ..llm.client import LLMClient, LLMError
 from ..llm.prompts import render
@@ -45,10 +54,13 @@ class Pipeline:
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.meta = project.meta
-        self.existing = [it for it in project.items() if it.get("status") != "deleted"]
+        # G6 비교 대상은 채택된 문항만 (수동확인·삭제 후보 제외, Codex C7)
+        self.existing = project.items(status=["approved", "auto_pass", "warn"])
         for it in self.existing:
             it["_tokens"] = dedup.tokens(it)
+        self.page_errors: list[int] = []
         self.prog = {"batch": batch, "status": "running", "message": "", "started": now(), "updated": now(),
+                     "pid": os.getpid(), "heartbeat": time.time(),
                      "slots_total": len(slots), "pages_total": len({s["page"] for s in slots}), "pages_done": 0,
                      "accepted": 0, "manual": 0, "warn": 0, "calls": 0,
                      "gate_fail": {g: 0 for g in ("G1", "G2", "G3", "G4", "G5", "G6", "누락")},
@@ -62,7 +74,9 @@ class Pipeline:
                                    "model": self.s.model_generate, "prompt_version": PROMPT_VERSION}, batch=self.batch)
         try:
             done_sids = {it["slot"]["sid"] for it in self.p.items(batch=self.batch)}
-            todo = [s for s in self.slots if s["sid"] not in done_sids]
+            # page가 None인 슬롯은 원고가 삭제된 페이지 — 출제하지 않는다
+            todo = [s for s in self.slots if s["sid"] not in done_sids and s.get("page") is not None]
+            self.slots = [s for s in self.slots if s.get("page") is not None]
             by_page: dict[int, list] = {}
             for s in todo:
                 by_page.setdefault(s["page"], []).append(s)
@@ -76,6 +90,8 @@ class Pipeline:
                         if isinstance(exc, LLMError):
                             self._halt(f"LLM 오류로 중단: {exc}")
                         else:
+                            with self.lock:
+                                self.page_errors.append(futs[fu])
                             self.p.log("page_error", {"page": futs[fu], "error": repr(exc),
                                                       "trace": "".join(traceback.format_exception(exc))[-2000:]},
                                        batch=self.batch)
@@ -84,8 +100,17 @@ class Pipeline:
                     self._autostop_check()
                     self._flush()
             if self.prog["status"] == "running":
-                self.prog["status"] = "done"
-                self.prog["message"] = "출제 완료"
+                saved = {it["slot"]["sid"] for it in self.p.items(batch=self.batch)}
+                missing = [s["sid"] for s in self.slots if s["sid"] not in saved]
+                self.prog["missing_slots"] = len(missing)
+                if self.page_errors or missing:
+                    # Codex C9: 오류·미처리 슬롯이 남으면 '완료'가 아니라 '부분 완료' — 이어서 출제로 재개
+                    self.prog["status"] = "partial"
+                    self.prog["message"] = (f"부분 완료: 페이지 오류 {len(self.page_errors)}건, 미처리 슬롯 {len(missing)}개 "
+                                            "— '이어서 출제'로 남은 슬롯을 다시 출제할 수 있다.")
+                else:
+                    self.prog["status"] = "done"
+                    self.prog["message"] = "출제 완료"
         except Exception as e:  # noqa: BLE001
             self.prog["status"] = "error"
             self.prog["message"] = f"오류: {e}"
@@ -116,6 +141,7 @@ class Pipeline:
     def _flush(self):
         with self.lock:
             self.prog["updated"] = now()
+            self.prog["heartbeat"] = time.time()
             self.prog["usage"] = dict(self.client.usage)
             self.p.write_progress(self.batch, self.prog)
 
@@ -128,6 +154,8 @@ class Pipeline:
         while pending and attempt <= self.opts.get("max_retries", 3) and not self.stop.is_set():
             attempt += 1
             raw = self._generate(g, pending, feedback)
+            if self.stop.is_set():
+                break  # Codex C2: 생성 직후 중지 — 검증 전 후보는 버리고 슬롯은 재개용으로 남긴다
             cands, failed = [], []
             for s in pending:
                 r = raw.get(s["sid"])
@@ -143,8 +171,10 @@ class Pipeline:
                     self._fail(item, s, fails, feedback, last, failed)
                 else:
                     cands.append((item, s))
-            if cands and not self.stop.is_set():
+            if cands:
                 cands = self._llm_gates(cands, feedback, last, failed)
+                if cands is None:
+                    break  # G4~G6 도중 중지 — 통과가 확정되지 않은 후보는 저장하지 않는다
             for item, s in cands:
                 self._accept(item)
             pending = failed
@@ -152,6 +182,10 @@ class Pipeline:
                 with self.lock:
                     self.prog["retries"] += len(pending)
             self._flush()
+        if self.stop.is_set():
+            # 중지 시점에 남은 슬롯은 재시도 기회가 남아 있으므로 '수동 확인'으로 확정하지 않는다
+            self.p.log("page_stopped", {"page": g, "unsaved_slots": [s["sid"] for s in pending]}, batch=self.batch)
+            return
         for s in pending:
             item = last.get(s["sid"])
             if item is None:
@@ -202,7 +236,8 @@ class Pipeline:
 
     def _to_item(self, r: dict, s: dict, attempt: int) -> dict:
         item = {
-            "key": None, "batch": self.batch, "slot": s, "page": s["page"], "chasi": s["chasi"],
+            "key": None, "_tmp": uuid.uuid4().hex,  # 저장 전 후보끼리 G6에서 자기 자신을 구분하는 임시 ID (Codex C6)
+            "batch": self.batch, "slot": s, "page": s["page"], "chasi": s["chasi"],
             "type": s["type"], "difficulty": s["difficulty"], "polarity": s.get("polarity"),
             "combo": bool(s.get("combo")),
             "stem": r.get("stem", ""), "statements": r.get("statements") or [],
@@ -226,7 +261,8 @@ class Pipeline:
         if s.get("combo") and len(item["statements"]) == 4:
             correct = [st["label"] for st in item["statements"] if st.get("is_true")]
             if correct:
-                sets = choice_builder.build(correct, int(s["answer"]), seed=hash(s["sid"]) % 10000)
+                # 문자열 hash()는 실행마다 바뀌므로 안정 해시(crc32)로 시드를 고정한다 (Codex C17)
+                sets = choice_builder.build(correct, int(s["answer"]), seed=zlib.crc32(s["sid"].encode()) % 10000)
                 item["choices"] = [{"text": choice_builder.fmt(x), "labels": x, "is_true": x == sorted(correct, key="ㄱㄴㄷㄹ".index)}
                                    for x in sets]
                 item["answer"] = s["answer"]
@@ -247,6 +283,9 @@ class Pipeline:
         return fails + rf, warns + rw
 
     def _llm_gates(self, cands, feedback, last, failed):
+        """G4→G5→G6. 통과한 (item, slot) 목록을 반환하고, 도중에 중지되면 None을 반환한다."""
+        if self.stop.is_set():
+            return None
         items = [c[0] for c in cands]
         # G4 독립 풀이
         v4 = solver.solve(self.client, self.s, self.p, items)
@@ -260,7 +299,9 @@ class Pipeline:
                 self._fail(item, s, f, feedback, last, failed)
             else:
                 keep.append((item, s))
-        if not keep or self.stop.is_set():
+        if self.stop.is_set():
+            return None
+        if not keep:
             return []
         # G5 LLM 검수
         v5 = review_llm.review(self.client, self.s, self.p, [k[0] for k in keep], self.meta.get("objectives", ""))
@@ -274,6 +315,8 @@ class Pipeline:
                 self._fail(item, s, f, feedback, last, failed)
             else:
                 keep2.append((item, s))
+        if self.stop.is_set():
+            return None
         # G6 중복 (실행 중 다른 페이지에서 통과한 문항까지 포함해야 하므로 잠금 안에서 확인·등록)
         out = []
         for item, s in keep2:
@@ -307,9 +350,11 @@ class Pipeline:
 
     def _accept(self, item):
         item.pop("_tokens", None)
+        item.pop("_tmp", None)
         item["status"] = "warn" if item["validation"]["warnings"] else "auto_pass"
         item["validation"]["fails"] = []
         item["validation"]["passed_at"] = now()
+        integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)
         self.p.save_item(item, "auto_accept", {"status": item["status"], "attempts": item["validation"]["attempts"]})
         with self.lock:
@@ -348,9 +393,49 @@ def start_batch(project: Project, settings, slots: list[dict], options: dict, ki
     return batch
 
 
+def _pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    if os.name == "nt":  # Windows: os.kill(pid, 0)은 프로세스를 종료시키므로 쓰면 안 된다
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        k32.GetExitCodeProcess(h, ctypes.byref(code))
+        k32.CloseHandle(h)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except OSError:
+        return False
+
+
+def batch_state(project: Project, batch: int) -> str:
+    """running_here(이 프로세스에서 실행 중) / running_elsewhere(다른 살아 있는 프로세스) /
+    orphan(running으로 남았지만 실행 주체가 없음 — 서버 재시작 등) / 그 밖에는 저장된 상태값."""
+    if (project.slug, batch) in RUNNING:
+        return "running_here"
+    pr = project.read_progress(batch)
+    if pr.get("status") != "running":
+        return pr.get("status") or "pending"
+    pid = pr.get("pid")
+    if pid and pid != os.getpid() and _pid_alive(pid):
+        return "running_elsewhere"
+    return "orphan"
+
+
+RESUMABLE = ("stopped", "error", "partial", "orphan", "pending")
+
+
 def resume_batch(project: Project, settings, batch: int, background: bool = True):
+    state = batch_state(project, batch)
+    if state not in RESUMABLE:
+        raise RuntimeError(f"배치 {batch}는 지금 재개할 수 없다(상태: {state}).")
     b = next(x for x in project.batches() if x["batch"] == batch)
     pipe = Pipeline(project, settings, batch, b["slots"], b["options"])
+    RUNNING[(project.slug, batch)] = pipe  # 스레드 시작 전에 등록해 중복 재개를 막는다
     if background:
         threading.Thread(target=pipe.run, daemon=True, name=f"batch{batch}").start()
     else:

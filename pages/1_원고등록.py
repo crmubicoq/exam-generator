@@ -60,8 +60,14 @@ for s in meta["sources"]:
             if b1.button("이 매핑으로 확정", key=f"ok_{s['id']}", type="primary"):
                 p.set_page_map(s["id"], first, mode, True)
                 st.rerun()
-            if b2.button("원고 삭제", key=f"rm_{s['id']}"):
-                p.remove_source(s["id"])
+            used = p.items_using_source(s["id"])
+            sure = True
+            if used:
+                sure = b2.checkbox(f"문항 {used}개의 근거·승인이 무효화됨을 확인", key=f"rmok_{s['id']}")
+            if b2.button("원고 삭제", key=f"rm_{s['id']}", disabled=not sure):
+                lost = p.remove_source(s["id"])
+                if lost:
+                    st.warning(f"문항 {lost}개를 '수동 확인'으로 돌렸다(근거 원고 삭제).")
                 st.rerun()
         with c2:
             doc = pymupdf.open(p.dir / s["pdf"])

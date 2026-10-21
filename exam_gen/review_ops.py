@@ -1,15 +1,20 @@
 """G7 사람 검수 작업 — 승인·수정·삭제·재검증. 모든 조작은 이벤트로 남긴다(감사 추적).
 
-승인 조건: 코드 관문(G1 구조·G2 근거·G3 규칙)을 현재 내용으로 다시 통과해야 한다.
-          근거를 원고에서 찾지 못한 문항은 승인할 수 없다(★2 출처 표시 보장).
+승인 조건 (integrity.py)
+  - 현재 내용으로 코드 관문(G1 구조·G2 근거·G3 규칙·G6 중복)을 다시 통과
+  - 현재 내용 해시에 대한 G4·G5 통과 기록이 있음(수정 후에는 'LLM 재검증' 필요)
+  - 근거가 L1(부분 일치)이면 검수자가 근거를 직접 확인했다고 표시
 """
 from __future__ import annotations
 
 import copy
 
+from . import integrity
 from .llm.client import LLMClient
 from .store import Project, now
 from .validate import dedup, evidence, review_llm, rules, schema, solver
+
+ACCEPTED = ("approved", "auto_pass", "warn")  # G6 비교 대상: 채택된 문항만 (수동확인·삭제 후보 제외, Codex C7)
 
 
 def revalidate_code(project: Project, item: dict) -> tuple[list[str], list[str]]:
@@ -17,43 +22,61 @@ def revalidate_code(project: Project, item: dict) -> tuple[list[str], list[str]]
     fails = schema.check_structure(item, item["slot"])
     ef, ew = evidence.check_item(project.pages, item)
     rf, rw = rules.check(item)
-    others = [o for o in project.items() if o["key"] != item["key"]]
+    others = [o for o in project.items(status=list(ACCEPTED)) if o["key"] != item["key"]]
     df, dw, best = dedup.check(item, others)
+    item["validation"]["G6"] = best
     return fails + ef + rf + df, ew + rw + dw
 
 
 def save_edit(project: Project, item: dict, note: str = "") -> dict:
-    """사람이 고친 내용을 저장. 코드 관문을 다시 돌리고, LLM 관문(G4·G5)은 재검증 전 상태로 표시한다."""
+    """사람이 고친 내용을 저장. 코드 관문을 다시 돌리고, 내용이 바뀌었으면 G4·G5 재검증 전 상태로 둔다."""
     prev = project.item(item["key"])
     fails, warns = revalidate_code(project, item)
+    changed = integrity.content_hash(prev) != integrity.content_hash(item)
     item.setdefault("history", []).append({"at": now(), "action": "edit", "note": note,
                                            "before": {k: prev.get(k) for k in ("stem", "statements", "choices", "answer",
                                                                                 "short_variants", "explanation", "evidence")}})
     item["validation"]["fails"] = fails
-    item["validation"]["warnings"] = [w for w in warns] + ["사람 수정 — G4·G5 재검증 전"]
-    item["validation"]["llm_stale"] = True
-    item["status"] = "manual" if fails else "warn"
-    return project.save_item(item, "human_edit", {"fails": fails, "note": note})
-
-
-def approve(project: Project, key: str, who: str = "") -> tuple[bool, list[str]]:
-    item = project.item(key)
-    fails, warns = revalidate_code(project, item)
-    if fails:
-        item["validation"]["fails"] = fails
+    item["validation"]["warnings"] = warns + (["사람 수정 — G4·G5 재검증 전"] if changed else [])
+    if changed:
+        item["validation"]["llm_stale"] = True
+        item.pop("approved", None)
+    if item.get("status") == "deleted":
+        pass
+    elif fails:
         item["status"] = "manual"
-        project.save_item(item, "approve_blocked", {"fails": fails})
-        return False, fails
+    else:
+        item["status"] = "approved" if integrity.is_exportable(item) else "warn"
+    return project.save_item(item, "human_edit", {"fails": fails, "note": note, "content_changed": changed})
+
+
+def approve(project: Project, key: str, who: str = "", evidence_confirmed: bool = False) -> tuple[bool, list[str]]:
+    item = project.item(key)
+    if item.get("status") == "deleted":
+        return False, ["삭제된 문항"]
+    fails, warns = revalidate_code(project, item)
+    item["validation"]["fails"] = fails
+    reasons = integrity.block_reasons(item)
+    if integrity.needs_evidence_confirm(item) and not evidence_confirmed:
+        reasons.append("근거가 L1(부분 일치) — 검수자가 원고 하이라이트를 확인하고 '근거 확인'에 체크해야 함")
+    if reasons:
+        if fails:
+            item["status"] = "manual"
+        project.save_item(item, "approve_blocked", {"by": who, "reasons": reasons})
+        return False, reasons
     item["status"] = "approved"
-    item["approved"] = {"at": now(), "by": who, "warnings_at_approval": item["validation"].get("warnings", [])}
-    project.save_item(item, "approve", {"by": who})
+    item["approved"] = {"at": now(), "by": who, "hash": integrity.content_hash(item),
+                        "evidence_confirmed": bool(evidence_confirmed),
+                        "warnings_at_approval": item["validation"].get("warnings", [])}
+    project.save_item(item, "approve", {"by": who, "evidence_confirmed": bool(evidence_confirmed)})
     return True, []
 
 
 def bulk_approve(project: Project, keys: list[str], who: str = "") -> dict:
+    """일괄 승인은 근거 확인 표시를 줄 수 없으므로 L1 문항은 자동으로 제외(차단)된다."""
     ok, blocked = [], {}
     for k in keys:
-        good, f = approve(project, k, who)
+        good, f = approve(project, k, who, evidence_confirmed=False)
         (ok.append(k) if good else blocked.__setitem__(k, f))
     project.log("bulk_approve", {"by": who, "approved": len(ok), "blocked": len(blocked)})
     return {"approved": ok, "blocked": blocked}
@@ -63,28 +86,38 @@ def set_status(project: Project, key: str, status: str, reason: str = ""):
     item = project.item(key)
     item.setdefault("history", []).append({"at": now(), "action": status, "note": reason, "from": item.get("status")})
     if status == "restore":
-        status = "warn" if item["validation"].get("warnings") else "auto_pass"
-        if item["validation"].get("fails"):
-            status = "manual"
+        # 복원은 승인을 되살리지 않는다 — 다시 승인받아야 한다
+        item.pop("approved", None)
+        v = item["validation"]
+        status = "manual" if v.get("fails") or not integrity.is_verified(item) else ("warn" if v.get("warnings") else "auto_pass")
+    elif status == "deleted":
+        item.pop("approved", None)
     item["status"] = status
     project.save_item(item, f"set_{status}", {"reason": reason})
 
 
 def rerun_llm_gates(project: Project, settings, key: str) -> dict:
-    """한 문항에 대해 G4 독립 풀이·G5 LLM 검수를 다시 돌린다."""
+    """한 문항에 대해 코드 관문 + G4 독립 풀이 + G5 LLM 검수를 다시 돌리고, 모두 통과하면 검증 기록을 갱신한다."""
     item = project.item(key)
     client = LLMClient(settings)
+    code_f, code_w = revalidate_code(project, item)
     work = copy.deepcopy(item)
-    evidence.check_item(project.pages, work)
     f4, w4, raw4 = next(iter(solver.solve(client, settings, project, [work]).values()))
     f5, w5, raw5 = next(iter(review_llm.review(client, settings, project, [work],
                                                project.meta.get("objectives", "")).values()))
     item["validation"]["G4"], item["validation"]["G5"] = raw4, raw5
-    item["validation"]["llm_stale"] = False
-    code_f, code_w = revalidate_code(project, item)
     item["validation"]["fails"] = code_f + f4 + f5
     item["validation"]["warnings"] = code_w + w4 + w5
+    item["validation"]["llm_stale"] = False
+    if not item["validation"]["fails"]:
+        integrity.mark_verified(item)
+    else:
+        item["validation"].pop("verified", None)
     if item["status"] != "deleted":
-        item["status"] = "manual" if item["validation"]["fails"] else ("warn" if item["validation"]["warnings"] else "auto_pass")
+        if item["validation"]["fails"]:
+            item["status"] = "manual"
+        elif not integrity.is_exportable(item):
+            item.pop("approved", None)
+            item["status"] = "warn" if item["validation"]["warnings"] else "auto_pass"
     project.save_item(item, "llm_recheck", {"fails": item["validation"]["fails"]})
     return item

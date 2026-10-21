@@ -15,6 +15,8 @@ _PREFIX = re.compile(r"^\s*(?:[①②③④⑤]|\(?\d\)|\d[.)]|[ㄱㄴㄷㄹ][.)
 _BLANK = re.compile(r"\(\s{2,}\)|\(\s*_+\s*\)|（\s+）")
 _NEG = re.compile(r"않은|아닌|틀린|거리가\s*먼|부적절|잘못된|옳지|해당하지")
 _NOANSWER = re.compile(r"정답\s*없음|모두\s*정답|모두\s*옳다|모두\s*틀리다")
+_QUOTED = re.compile(r"“[^”]*”|\"[^\"]*\"|‘[^’]*’|「[^」]*」|『[^』]*』")
+_PARTICLE = re.compile(r"\s*(?:으로|로서|로써|에서|에게|이란|이라|란|은|는|이|가|을|를|와|과|로|의|도|만|에)")
 
 
 def _texts(item: dict) -> list[tuple[str, str]]:
@@ -38,7 +40,8 @@ def check(item: dict) -> tuple[list[str], list[str]]:
     t = item["type"]
 
     for where, text in _texts(item):
-        for sent in re.split(r"(?<=[.?!])\s+", text or ""):
+        text = _QUOTED.sub("", text or "")  # 따옴표 안 인용(대화·사례 문장)은 문어체 검사에서 제외 (Codex C16)
+        for sent in re.split(r"(?<=[.?!])\s+", text):
             if _POLITE.search(sent):
                 fails.append(f"G3: {where} 문어체 위반('~입니다/~합니다' 금지)")
                 break
@@ -62,8 +65,8 @@ def check(item: dict) -> tuple[list[str], list[str]]:
         if not _BLANK.search(stem):
             fails.append("G3: 단답형 괄호 빈칸 '(     )' 형식이 없음")
         for m in _BLANK.finditer(stem):
-            nxt = stem[m.end():m.end() + 1]
-            if nxt and nxt in "은는이가을를와과로란의도":
+            # 빈칸 뒤 공백을 건너뛰고 조사로 시작하면 힌트가 된다. '(은)는'처럼 괄호 형식이면 허용 (Codex C16)
+            if _PARTICLE.match(stem, m.end()):
                 fails.append("G3: 단답형 괄호 뒤 조사가 정답 힌트가 됨 — '(은)는' 형식으로 쓸 것")
                 break
 

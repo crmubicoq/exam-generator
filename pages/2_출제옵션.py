@@ -10,7 +10,7 @@ from exam_gen.config import criteria
 from exam_gen.generate.generator import start_batch
 from exam_gen.llm import settings as llm_settings
 from exam_gen.plan.coverage import allocate, largest_remainder
-from exam_gen.plan.slots import build_slots, summarize
+from exam_gen.plan.slots import build_slots, check_options, summarize
 
 ui.setup("출제 옵션")
 p = ui.require_project(ui.sidebar())
@@ -101,12 +101,17 @@ if forced:
                         disabled=["g", "책 쪽수", "차시", "글자 수", "기존 문항"], column_config={"g": None})
     alloc = {int(r["g"]): int(r["이번 출제"]) for _, r in df.iterrows() if int(r["이번 출제"]) > 0}
     n = sum(alloc.values())
-    if mode != "추가 출제" or diff_counts is None:
+    if mode != "추가 출제":
         diff_counts = largest_remainder(n, dpct)
+    elif diff_counts is not None and sum(diff_counts.values()) != n:
+        st.error(f"페이지 할당 합계({n})와 난이도별 수량 합계({sum(diff_counts.values())})가 다르다 — 둘 중 하나를 맞추세요.")
 else:
     st.bar_chart(df.set_index("책 쪽수")[["기존 문항", "이번 출제"]], height=220, stack=True)
 
-if n:
+# ---------- 설정 검사 (Codex C12·C13) ----------
+problems = check_options(new_opts, n if diff_counts is not None else None, diff_counts)
+
+if n and not problems:
     preview = build_slots(pages, alloc, new_opts, difficulty_counts=diff_counts)
     sm = summarize(preview)
     c = st.columns(5)
@@ -123,11 +128,6 @@ if n:
                f"예상 LLM 호출 약 {est}회(재출제 포함 추정) · 공급자: {llm_settings.PROVIDERS[s.provider]}")
 
 # ---------- 시작 ----------
-problems = []
-if dsum != 100:
-    problems.append("난이도 합계가 100이 아니다.")
-if tsum != 100:
-    problems.append("유형 합계가 100이 아니다.")
 if not p.page_map_ready():
     problems.append("원고 등록 화면에서 책 쪽수 매핑을 확정해야 한다(자동 중단 조건 1).")
 if not n:

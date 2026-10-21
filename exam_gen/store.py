@@ -16,6 +16,7 @@ import re
 import shutil
 import sqlite3
 import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -82,7 +83,7 @@ class Project:
     def add_source(self, src_path: Path, filename: str | None = None) -> dict:
         filename = filename or Path(src_path).name
         meta = self.meta
-        sid = f"s{len(meta['sources']) + 1}"
+        sid = "s" + uuid.uuid4().hex[:8]  # 삭제 후 재사용되지 않는 고유 ID (Codex C5)
         dst = self.dir / "sources" / f"{sid}_{filename}"
         shutil.copyfile(src_path, dst)
         pdf_path = self.dir / "pdf" / f"{sid}.pdf"
@@ -112,16 +113,28 @@ class Project:
         self.rebuild_manuscript()
         return source
 
-    def remove_source(self, sid: str):
+    def remove_source(self, sid: str) -> int:
+        """원고 삭제. 이 원고를 근거로 쓰던 문항은 근거·승인이 무효화된다. 반환: 영향받은 문항 수."""
         meta = self.meta
         meta["sources"] = [s for s in meta["sources"] if s["id"] != sid]
         self.save_meta(meta)
-        self.rebuild_manuscript()
+        return self.rebuild_manuscript()
 
-    def rebuild_manuscript(self):
-        """원고 PDF를 이어 붙이고 pages.json을 다시 만든다. 기존 페이지의 차시·제외 설정은 유지한다."""
+    def items_using_source(self, sid: str) -> int:
+        gs = {p["g"] for p in self.pages if p["src"] == sid}
+        n = 0
+        for it in self.items():
+            used = {it.get("page")} | {(e.get("match") or {}).get("g") for e in it.get("evidence") or []}
+            if gs & used:
+                n += 1
+        return n
+
+    def rebuild_manuscript(self) -> int:
+        """원고 PDF를 이어 붙이고 pages.json을 다시 만든다. 기존 페이지의 차시·제외 설정은 유지한다.
+        기존 문항의 페이지·근거 위치를 (원고 ID, 원고 내 페이지) 기준으로 다시 연결한다. 반환: 무효화된 문항 수."""
         meta = self.meta
-        old = {(p["src"], p["idx"]): p for p in self.pages} if (self.dir / "pages.json").exists() else {}
+        old_pages = list(self.pages) if (self.dir / "pages.json").exists() else []
+        old = {(p["src"], p["idx"]): p for p in old_pages}
         out = pymupdf.open()
         pages = []
         min_chars = criteria()["thresholds"]["min_page_chars"]
@@ -156,6 +169,62 @@ class Project:
         out.close()
         _atomic_write(self.dir / "pages.json", json.dumps(pages, ensure_ascii=False))
         self._pages_cache = None
+        return self._remap(old_pages) if old_pages else 0
+
+    def _remap(self, old_pages: list[dict]) -> int:
+        """전역 페이지 번호(g)가 바뀐 뒤 문항·배치 슬롯을 새 번호로 옮긴다 (Codex C5).
+        근거 원고가 사라진 문항은 근거·검증·승인을 무효화하고 '수동 확인'으로 돌린다."""
+        new_g = {(p["src"], p["idx"]): p["g"] for p in self.pages}
+        old_key = {p["g"]: (p["src"], p["idx"]) for p in old_pages}
+        labels = {p["g"]: p["label"] for p in self.pages}
+
+        def remap(g):
+            return new_g.get(old_key.get(g)) if g is not None else None
+
+        lost_n = 0
+        for it in self.items():
+            before = json.dumps(it, ensure_ascii=False, sort_keys=True)
+            lost = []
+            ng = remap(it.get("page"))
+            if ng is None:
+                if it.get("page") is not None:
+                    lost.append("출제 페이지")
+                it["page"] = None  # 삭제된 원고의 페이지 번호가 다른 원고를 가리키지 않도록 비운다
+                it["slot"]["page"] = None
+            else:
+                it["page"] = ng
+                it["slot"]["page"] = ng
+                it["slot"]["label"] = labels[ng]
+            for ev in it.get("evidence") or []:
+                m = ev.get("match")
+                if not m:
+                    continue
+                mg = remap(m.get("g"))
+                if mg is None:
+                    ev["match"] = None
+                    lost.append(f"근거[{ev.get('target')}]")
+                else:
+                    m["g"], m["label"] = mg, labels[mg]
+            it["source_pages"] = sorted({e["match"]["g"] for e in it.get("evidence") or [] if e.get("match")})
+            if lost and it.get("status") != "deleted":
+                lost_n += 1
+                v = it.setdefault("validation", {})
+                v["fails"] = list(v.get("fails") or []) + [f"원고 변경: {', '.join(lost)}의 원고가 삭제·교체됨 — 근거 재확인 필요"]
+                v.pop("verified", None)
+                it.pop("approved", None)
+                it["status"] = "manual"
+            if json.dumps(it, ensure_ascii=False, sort_keys=True) != before:
+                self.save_item(it, "source_remap", {"lost": lost})
+        with _LOCK, self._conn() as c:
+            for b in c.execute("SELECT batch, slots FROM batches").fetchall():
+                slots = json.loads(b["slots"])
+                for s in slots:
+                    ng = remap(s.get("page"))
+                    s["page"] = ng  # None이면 재개 시 건너뛴다
+                    if ng is not None:
+                        s["label"] = labels[ng]
+                c.execute("UPDATE batches SET slots=? WHERE batch=?", (json.dumps(slots, ensure_ascii=False), b["batch"]))
+        return lost_n
 
     @staticmethod
     def label_for(source: dict, idx: int) -> str:
@@ -178,6 +247,7 @@ class Project:
         for p in pages:
             p["label"] = self.label_for(srcs[p["src"]], p["idx"])
         self.save_pages(pages)
+        self._remap(pages)  # 페이지 번호는 그대로, 근거 위치에 기록된 쪽수 라벨만 갱신
 
     def page_map_ready(self) -> bool:
         srcs = self.meta["sources"]

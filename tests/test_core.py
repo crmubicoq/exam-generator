@@ -1,4 +1,5 @@
 """계획서 '검증 방법'의 단위 테스트 — 샘플 원고 input_17-43.pdf 기준."""
+import copy
 from collections import Counter
 
 import openpyxl
@@ -145,11 +146,12 @@ def test_combo_builder_balance():
 def test_solver_compare_detects_wrong_key():
     item = {"type": "mcq", "answer": "2", "choices": [{"text": "a", "is_true": True}, {"text": "b", "is_true": False},
                                                      {"text": "c", "is_true": True}, {"text": "d", "is_true": True}]}
-    ok = {"answer": "2", "judgments": [{"target": "2", "is_true": False, "reason": ""}], "unique": True, "solvable": True, "note": ""}
+    js = [{"target": str(i + 1), "is_true": c["is_true"], "reason": ""} for i, c in enumerate(item["choices"])]
+    ok = {"answer": "2", "judgments": js, "unique": True, "solvable": True, "note": ""}
     assert solver.compare(item, ok)[0] == []
     bad = {**ok, "answer": "3"}
     assert any("≠" in f for f in solver.compare(item, bad)[0])
-    multi = {**ok, "judgments": [{"target": "1", "is_true": False, "reason": "원고와 다름"}]}
+    multi = {**ok, "judgments": [{**js[0], "is_true": False, "reason": "원고와 다름"}] + js[1:]}
     assert solver.compare(item, multi)[0]
 
 
@@ -172,7 +174,11 @@ def test_excel_template_header_preserved(sample_project, tmp_path):
             "choices": [], "statements": [], "short_variants": [], "source_pages": [1], "validation": {},
             "evidence": [{"target": "OX", "quote": "자산 구조는 부동산(주택 중심) 비중이 크며", "is_true": True,
                           "match": {"label": "18", "g": 1}}]}
-    short = {**item, "key": "K00002", "type": "short", "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [(     )]", "answer": "후기 고령기"}
+    short = {**copy.deepcopy(item), "key": "K00002", "type": "short", "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [(     )]", "answer": "후기 고령기"}
+    from exam_gen import integrity
+    for it in (item, short):  # 최종 출력 조건: 현재 내용 검증 + 같은 해시로 승인
+        integrity.mark_verified(it)
+        it["approved"] = {"hash": integrity.content_hash(it)}
     r = excel.write(sample_project, [item, short], tmp_path / "o.xlsx")
     ws = openpyxl.load_workbook(r["path"]).worksheets[0]
     tpl = openpyxl.load_workbook(TEMPLATE_XLSX).worksheets[0]

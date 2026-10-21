@@ -4,13 +4,17 @@ import copy
 import pandas as pd
 import streamlit as st
 
-from exam_gen import review_ops, ui
+from exam_gen import integrity, review_ops, ui
 from exam_gen.generate import choice_builder
 from exam_gen.llm import settings as llm_settings
 from exam_gen.output.evidence_pdf import render_item_page
 from exam_gen.ingest.page_map import format_pages
 
 ui.setup("검수")
+
+
+def _label(it) -> str:
+    return pages[it["page"]]["label"] if it.get("page") is not None else "-"
 
 
 def _s(v) -> str:
@@ -40,13 +44,13 @@ f_text = c[5].text_input("검색(발문·키)")
 view = [it for it in items
         if (not f_status or it["status"] in f_status) and (not f_type or it["type"] in f_type)
         and (not f_diff or it["difficulty"] in f_diff) and (not f_chasi or it.get("chasi") in f_chasi)
-        and (not f_page or pages[it["page"]]["label"] in f_page)
+        and (not f_page or _label(it) in f_page)
         and (not f_text or f_text in it.get("stem", "") or f_text == it["key"])]
 st.caption(f"{len(view)}문항 표시 / 전체 {len(items)}")
 
 rows = pd.DataFrame([{"키": it["key"], "상태": ui.status_badge(it["status"]), "차시": it.get("chasi"),
                       "유형": ui.TYPE_KO[it["type"]], "난이도": it["difficulty"],
-                      "쪽": format_pages([pages[g]["label"] for g in it.get("source_pages") or []]) or pages[it["page"]]["label"],
+                      "쪽": format_pages([pages[g]["label"] for g in it.get("source_pages") or []]) or _label(it),
                       "발문": it.get("stem", "")[:70],
                       "경고": len(it["validation"].get("warnings", [])), "탈락사유": len(it["validation"].get("fails", []))}
                      for it in view])
@@ -67,7 +71,8 @@ with left:
 if not view:
     st.stop()
 idx = sel.selection.rows[0] if sel and sel.selection.rows else 0
-it = copy.deepcopy(view[min(idx, len(view) - 1)])
+saved = view[min(idx, len(view) - 1)]          # 저장된 상태(미리보기·승인 판단용)
+it = copy.deepcopy(saved)                         # 편집용 사본
 
 with right:
     st.markdown(f"### {it['key']} · {ui.status_badge(it['status'])}")
@@ -119,6 +124,13 @@ with right:
         note = st.text_input("수정 메모(선택)")
         who = st.text_input("검수자", key="who_one", value=st.session_state.get("who", ""))
         st.session_state["who"] = who
+        reasons = integrity.block_reasons(saved)
+        need_conf = integrity.needs_evidence_confirm(saved)
+        if reasons and saved["status"] != "deleted":
+            st.info("승인 전 해결할 것: " + " / ".join(reasons))
+        confirm = False
+        if need_conf:
+            confirm = st.checkbox("근거가 L1(부분 일치)이다 — '원고 근거' 탭에서 하이라이트를 직접 확인했다", key=f"conf_{it['key']}")
         b = st.columns(5)
         if b[0].button("수정 저장", width="stretch"):
             if it.get("statements"):
@@ -132,7 +144,7 @@ with right:
             st.toast("저장했다. " + ("코드 관문 탈락: " + "; ".join(r["validation"]["fails"]) if r["validation"]["fails"] else "코드 관문 통과"))
             st.rerun()
         if b[1].button("승인", type="primary", width="stretch", disabled=not who or it["status"] == "deleted"):
-            ok, fails = review_ops.approve(p, it["key"], who)
+            ok, fails = review_ops.approve(p, it["key"], who, evidence_confirmed=confirm)
             (st.toast("승인했다.") if ok else st.error("승인 불가: " + "; ".join(fails)))
             st.rerun()
         if b[2].button("LLM 재검증", width="stretch", help="G4 독립 풀이 + G5 검수를 다시 실행"):
@@ -150,9 +162,12 @@ with right:
             b[4].caption("승인하려면 검수자 입력")
 
     with tab_src:
-        gs = it.get("source_pages") or [it["page"]]
+        # 미리보기는 저장된 문항(근거 매칭 결과 포함) 기준 — 편집 중 내용은 저장하면 다시 매칭된다 (Codex C8)
+        gs = saved.get("source_pages") or ([saved["page"]] if saved.get("page") is not None else [])
+        if not gs:
+            st.warning("원고에서 확인된 근거 위치가 없다(근거 미매칭 또는 원고 삭제).")
         for g in gs:
-            st.image(render_item_page(p, it, g), caption=f"원고 p.{pages[g]['label']} — 노랑: 참 진술 근거 / 주황: 함정이 바꾼 원문",
+            st.image(render_item_page(p, saved, g), caption=f"원고 p.{pages[g]['label']} — 노랑: 참 진술 근거 / 주황: 함정이 바꾼 원문",
                      width="stretch")
 
     with tab_check:

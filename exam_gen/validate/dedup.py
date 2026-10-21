@@ -48,7 +48,10 @@ def check(item: dict, others: list[dict]) -> tuple[list[str], list[str], dict]:
     tk, kp, ev = tokens(item), _kp(item), _ev_lines(item)
     best = {"key": None, "score": 0.0}
     for o in others:
-        if o.get("key") == item.get("key") or o.get("status") == "deleted":
+        # 자기 자신 제외는 실제 키(또는 저장 전 임시 ID)가 같을 때만 — 둘 다 None이면 다른 문항이다 (Codex C6)
+        same_key = item.get("key") is not None and o.get("key") == item.get("key")
+        same_tmp = item.get("_tmp") is not None and o.get("_tmp") == item.get("_tmp")
+        if o is item or same_key or same_tmp or o.get("status") in ("deleted", "manual"):
             continue
         s_text = jaccard(tk, o.get("_tokens") or tokens(o))
         s_kp = jaccard(kp, _kp(o))

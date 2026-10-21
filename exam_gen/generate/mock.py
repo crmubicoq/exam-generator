@@ -134,7 +134,7 @@ def _solve(ctx: dict) -> dict:
     p, items = ctx["project"], ctx["items"]
     corpus = normalize(" ".join(p.page_text(g) for g in range(len(p.pages))))
     results = []
-    for i, it in enumerate(items, 1):
+    for i, it in zip(ctx.get("ids") or range(1, len(items) + 1), items):
         truth = lambda txt: normalize(txt) in corpus  # noqa: E731
         if it["type"] == "ox":
             ans = "O" if truth(it["stem"]) else "X"
@@ -160,4 +160,4 @@ def _review(ctx: dict) -> dict:
     from ..validate.schema import REVIEW_CHECKS
     return {"results": [{"id": str(i), "checks": [{"id": c, "result": "pass", "note": ""} for c in REVIEW_CHECKS],
                          "assessed_difficulty": it["difficulty"], "suggestion": ""}
-                        for i, it in enumerate(ctx["items"], 1)]}
+                        for i, it in zip(ctx.get("ids") or range(1, len(ctx["items"]) + 1), ctx["items"])]}

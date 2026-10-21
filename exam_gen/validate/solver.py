@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from ..ingest.pdf_text import normalize
 from ..llm.prompts import render
 from .schema import SOLVE_SCHEMA
@@ -40,19 +42,43 @@ def excerpt(project, items: list[dict]) -> str:
     pages = project.pages
     gs = set()
     for it in items:
-        for g in {it["page"], *(it.get("source_pages") or [])}:
+        for g in {it.get("page"), *(it.get("source_pages") or [])} - {None}:
             gs |= {x for x in (g - 1, g, g + 1) if 0 <= x < len(pages) and pages[x]["src"] == pages[g]["src"]}
     return "\n\n".join(f"[p.{pages[g]['label']}]\n{project.page_text(g)}" for g in sorted(gs))
+
+
+def norm_id(v) -> str:
+    """응답 ID 표기 차이('[1]', 'Q1', '문항 1')를 흡수한다."""
+    m = re.search(r"\d+", str(v or ""))
+    return m.group() if m else ""
+
+
+def ask_until_complete(call, items: list[dict], ids: list[str], tries: int = 2) -> dict:
+    """검증기 응답에서 빠진 문항만 다시 묻는다. 검증기 쪽 누락이 문항의 재출제 기회를 소모하지 않게 한다."""
+    res: dict[str, dict] = {}
+    for _ in range(tries):
+        sub = [(it, i) for it, i in zip(items, ids) if i not in res]
+        if not sub:
+            break
+        out = call([s[0] for s in sub], [s[1] for s in sub]) or {}
+        for r in out.get("results") or []:
+            rid = norm_id(r.get("id"))
+            if rid in ids and rid not in res:
+                res[rid] = {**r, "id": rid}
+    return res
 
 
 def solve(client, settings, project, items: list[dict]) -> dict:
     """반환: {item_key_or_idx: (fails, warns, raw)}"""
     ids = [str(i + 1) for i in range(len(items))]
-    user = "# 원고 발췌\n" + excerpt(project, items) + "\n\n# 문항 (정답 비공개)\n" + \
-        "\n\n".join(present(it, i) for it, i in zip(items, ids))
-    out = client.structured(render("solve_system.j2"), user, SOLVE_SCHEMA, model=settings.model_solve,
-                            task="solve", context={"items": items, "project": project})
-    res = {r["id"]: r for r in out.get("results", [])}
+
+    def call(sub_items, sub_ids):
+        user = "# 원고 발췌\n" + excerpt(project, sub_items) + "\n\n# 문항 (정답 비공개)\n" + \
+            "\n\n".join(present(it, i) for it, i in zip(sub_items, sub_ids))
+        return client.structured(render("solve_system.j2"), user, SOLVE_SCHEMA, model=settings.model_solve,
+                                 task="solve", context={"items": sub_items, "project": project, "ids": sub_ids})
+
+    res = ask_until_complete(call, items, ids)
     verdicts = {}
     for it, i in zip(items, ids):
         r = res.get(i)
@@ -73,19 +99,34 @@ def compare(item: dict, r: dict | None) -> tuple[list[str], list[str]]:
             fails.append(f"G4: 독립 풀이 답 '{got}' ≠ 출제 정답 '{key}' — 다른 답이 성립할 수 있음")
     elif got.upper().strip("()①②③④ ") != key.upper() and not _circled(got, key):
         fails.append(f"G4: 독립 풀이 정답 {got} ≠ 출제 정답 {key}")
+    if not got:
+        fails.append("G4: 독립 풀이 답이 비어 있음")
     truth = {}
     if item.get("statements"):
         truth = {s["label"]: bool(s.get("is_true")) for s in item["statements"]}
     elif t == "mcq":
         truth = {str(i + 1): bool(c.get("is_true")) for i, c in enumerate(item.get("choices") or [])}
+    seen = {}
     for j in r.get("judgments") or []:
         tg = str(j.get("target", "")).strip("() .")
-        if tg in truth and bool(j.get("is_true")) != truth[tg]:
+        tg = {"①": "1", "②": "2", "③": "3", "④": "4"}.get(tg, tg)
+        if tg in seen:
+            fails.append(f"G4: [{tg}] 판정이 중복됨")
+        seen[tg] = j
+        if truth and tg not in truth:
+            fails.append(f"G4: 알 수 없는 판정 대상 [{tg}]")
+        elif tg in truth and bool(j.get("is_true")) != truth[tg]:
             fails.append(f"G4: [{tg}] 독립 판정 {'참' if j.get('is_true') else '거짓'} ≠ 출제 의도 "
                          f"{'참' if truth[tg] else '거짓'} — {j.get('reason', '')[:80]}")
-    if not r.get("unique", True):
+    # Codex C11: 선다형·조합형은 보기(진술)마다 판정이 있어야 한다 — 정답 번호만 맞힌 응답은 통과시키지 않는다
+    missing = [tg for tg in truth if tg not in seen]
+    if missing:
+        fails.append(f"G4: 보기별 판정 누락 {missing}")
+    if not isinstance(r.get("unique"), bool) or not isinstance(r.get("solvable"), bool):
+        fails.append("G4: unique/solvable 판정 누락")
+    if r.get("unique") is False:
         fails.append(f"G4: 정답이 하나로 정해지지 않음 — {r.get('note', '')[:100]}")
-    if not r.get("solvable", True):
+    if r.get("solvable") is False:
         fails.append(f"G4: 원고만으로 풀 수 없음 — {r.get('note', '')[:100]}")
     elif r.get("note") and not fails:
         warns.append(f"G4 메모: {r['note'][:120]}")

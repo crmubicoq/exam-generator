@@ -47,8 +47,17 @@ def answer_cell(item: dict):
 
 
 def page_cell(project, item: dict) -> str:
-    gs = item.get("source_pages") or [item["page"]]
-    return format_pages([project.pages[g]["label"] for g in gs])
+    """'PPT' 열: 근거 원고의 책 쪽수(슬라이드 번호). 근거가 여러 원고에 걸치면 원고 파일명별로 나눠 적는다."""
+    gs = item.get("source_pages") or ([item["page"]] if item.get("page") is not None else [])
+    if not gs:
+        return ""
+    by_src: dict[str, list[str]] = {}
+    for g in gs:
+        by_src.setdefault(project.pages[g]["src"], []).append(project.pages[g]["label"])
+    if len(by_src) == 1:
+        return format_pages(next(iter(by_src.values())))
+    names = {s["id"]: Path(s["filename"]).stem for s in project.meta["sources"]}
+    return ", ".join(f"{names.get(src, src)}:{format_pages(lbs)}" for src, lbs in by_src.items())
 
 
 def row_values(project, item: dict, opts: dict) -> list:
@@ -90,6 +99,8 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
     height = ws.row_dimensions[4].height
     if ws.max_row >= 4:
         ws.delete_rows(4, ws.max_row - 3)
+    for r in [r for r in ws.row_dimensions if r >= 4]:  # 예시 행의 높이 설정 잔여물 제거 (Codex C19)
+        del ws.row_dimensions[r]
     for i, name in enumerate(HIDDEN_COLS):
         col = FIRST_HIDDEN + i
         ws.cell(row=2, column=col, value=name)._style = copy(head_style)

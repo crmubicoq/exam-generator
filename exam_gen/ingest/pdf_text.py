@@ -15,17 +15,29 @@ FOOTER_FRAC = 0.895
 
 _SUBSCRIPTS = "₀₁₂₃₄₅₆₇₈₉"
 _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
-_KEEP = re.compile(r"[^0-9a-z가-힣ㄱ-ㅎ]")
+_KEEP = re.compile(r"[^0-9a-z가-힣ㄱ-ㅎ\x01-\x04]")
+_RANGE = "~∼〜～–—\\-"
+_MARK = str.maketrans({"\x01": ".", "\x02": "~", "\x03": "%", "\x04": "-"})
 
 
 def normalize(text: str) -> str:
-    """비교용 정규화: 숫자·영문·한글만 남긴다 (OCR 공백, 줄바꿈, 문장부호 차이 흡수)."""
+    """비교용 정규화: 공백·줄바꿈·문장부호 차이(OCR 포함)는 흡수하고, 의미가 있는 수치 기호는 보존한다.
+
+    보존(Codex C4): 숫자 사이 소수점(1.5 ≠ 15), 숫자 사이 범위 기호(55~64), %, 음수 부호(-100 ≠ 100)
+    통일: 천 단위 쉼표 제거(1,234 = 1234), 범위 기호 종류(~ ∼ - –)는 '~' 하나로
+    """
     if not text:
         return ""
     text = re.sub(f"[{_SUBSCRIPTS}]", lambda m: str(_SUBSCRIPTS.index(m.group())), text)
     text = re.sub(f"[{_SUPERSCRIPTS}]", lambda m: str(_SUPERSCRIPTS.index(m.group())), text)
     text = re.sub(r"[ᄋᄀ]", "o", text)  # "CO₂"가 "Cᄋ2"로 OCR된 사례
-    return _KEEP.sub("", text.lower())
+    text = text.lower()
+    text = re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text)
+    text = re.sub(r"(?<=\d)\s*[.．]\s*(?=\d)", "\x01", text)
+    text = re.sub(rf"(?<=\d)\s*[{_RANGE}]\s*(?=\d)", "\x02", text)
+    text = re.sub(r"[%％]", "\x03", text)
+    text = re.sub(r"(?<![0-9a-z가-힣\x01\x02])[-−–](?=\d)", "\x04", text)
+    return _KEEP.sub("", text).translate(_MARK)
 
 
 def extract_lines(page: pymupdf.Page) -> list[dict]:

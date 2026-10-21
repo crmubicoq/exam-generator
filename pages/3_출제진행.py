@@ -6,7 +6,7 @@ import streamlit as st
 
 from exam_gen import ui
 from exam_gen.config import criteria
-from exam_gen.generate.generator import RUNNING, resume_batch, stop_batch
+from exam_gen.generate.generator import RESUMABLE, batch_state, resume_batch, stop_batch
 from exam_gen.llm import settings as llm_settings
 from exam_gen.plan.coverage import coverage_stats
 
@@ -30,16 +30,20 @@ batch = batches[ids.index(sel)]
 @st.fragment(run_every=2)
 def live():
     pr = p.read_progress(sel)
-    running = (p.slug, sel) in RUNNING
+    state = batch_state(p, sel)
     if not pr:
         st.info("아직 진행 정보가 없다.")
+        if state in RESUMABLE and st.button("출제 시작(이 배치)", type="primary"):
+            resume_batch(p, llm_settings.load(), sel)
+            st.rerun()
         return
-    status = pr.get("status")
+    status = {"orphan": "orphan", "running_elsewhere": "running"}.get(state, pr.get("status"))
     total = pr.get("slots_total", 0) or 1
     got = pr.get("accepted", 0) + pr.get("manual", 0)
     st.progress(min(got / total, 1.0), text=f"{got}/{total} 슬롯 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}")
     c = st.columns(6)
-    c[0].metric("상태", {"running": "진행 중", "done": "완료", "stopped": "중지됨", "error": "오류"}.get(status, status))
+    c[0].metric("상태", {"running": "진행 중", "running_here": "진행 중", "done": "완료", "stopped": "중지됨", "error": "오류",
+                        "partial": "부분 완료", "orphan": "중단됨"}.get(status, status))
     c[1].metric("통과", pr.get("accepted", 0))
     c[2].metric("경고 포함", pr.get("warn", 0))
     c[3].metric("수동 확인", pr.get("manual", 0))
@@ -47,17 +51,24 @@ def live():
     ft = pr.get("first_try", {})
     rate = ft.get("g2_pass", 0) / ft["items"] if ft.get("items") else 0
     c[5].metric("첫 시도 근거 매칭률", f"{rate:.0%}")
-    if pr.get("message"):
-        (st.error if status in ("stopped", "error") else st.info)(pr["message"])
+    if state == "orphan":
+        st.error("실행 주체가 없는 배치다(서버 재시작 등으로 중단됨). '이어서 출제'로 남은 슬롯을 재개할 수 있다.")
+    elif state == "running_elsewhere":
+        st.info("다른 프로세스(다른 서버 창)에서 실행 중이다. 이 화면에서는 중지·재개할 수 없다.")
+    elif pr.get("message"):
+        (st.error if status in ("stopped", "error", "partial") else st.info)(pr["message"])
     gf = pr.get("gate_fail", {})
     st.caption("관문별 탈락(시도 기준): " + " · ".join(f"{k} {v}" for k, v in gf.items()) +
                f" · LLM 호출 {pr.get('usage', {}).get('calls', 0)}회")
-    if running:
+    if state == "running_here":
         if st.button("중지", type="secondary"):
             stop_batch(p, sel)
-    elif status in ("stopped", "error"):
+    elif state in RESUMABLE:
         if st.button("이어서 출제(남은 슬롯)", type="primary"):
-            resume_batch(p, llm_settings.load(), sel)
+            try:
+                resume_batch(p, llm_settings.load(), sel)
+            except RuntimeError as e:
+                st.error(str(e))
             st.rerun()
 
 

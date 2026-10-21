@@ -35,6 +35,25 @@ def _blocks(values: list, n: int, rng: random.Random) -> list:
     return out[:n]
 
 
+class SlotError(ValueError):
+    pass
+
+
+def check_options(opts: dict, n: int | None = None, difficulty_counts: dict | None = None) -> list[str]:
+    """설정끼리 모순되면 사유 목록을 반환한다 (Codex C12·C13). 화면과 build_slots가 같은 검사를 쓴다."""
+    out = []
+    if sum(opts["difficulty_pct"].values()) != 100:
+        out.append("난이도 비율 합계가 100이 아니다.")
+    if sum(opts["type_pct"].values()) != 100:
+        out.append("유형 비율 합계가 100이 아니다.")
+    if opts.get("combo_pct", 0) > opts["mcq_positive_pct"]:
+        out.append(f"조합형 비율({opts.get('combo_pct')}%)이 '옳은 것 고르기' 비율({opts['mcq_positive_pct']}%)보다 크다 "
+                   "— 조합형은 '옳은 것을 모두 고른 것'이라 옳은 것 고르기에 포함된다.")
+    if difficulty_counts is not None and n is not None and sum(difficulty_counts.values()) != n:
+        out.append(f"난이도별 수량 합계({sum(difficulty_counts.values())})와 페이지 할당 합계({n})가 다르다.")
+    return out
+
+
 def build_slots(pages: list[dict], page_counts: dict[int, int], opts: dict,
                 difficulty_counts: dict | None = None, seed: int = 7, start_index: int = 1) -> list[dict]:
     rng = random.Random(seed)
@@ -42,6 +61,9 @@ def build_slots(pages: list[dict], page_counts: dict[int, int], opts: dict,
     n = sum(page_counts.values())
     if n == 0:
         return []
+    problems = check_options(opts, n, difficulty_counts)
+    if problems:
+        raise SlotError(" / ".join(problems))
     if difficulty_counts is None:
         difficulty_counts = largest_remainder(n, opts["difficulty_pct"])
     type_counts = largest_remainder(n, opts["type_pct"])

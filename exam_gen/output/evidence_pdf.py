@@ -143,19 +143,39 @@ def _draw(page, segs: list[dict], used_y: list[float]):
             a.set_colors(stroke=color)
             a.set_opacity(c["opacity"])
             a.update()
+    used: dict[float, list[float]] = {}  # 열(x) → 사용한 y
+    H, W = page.rect.height, page.rect.width
     for seg in sorted(segs, key=lambda s: s["bboxes"][0][1]):
         tc = c["label_correct"] if seg["correct"] else c["label_wrong"]
         bg = c["bg_correct"] if seg["correct"] else c["bg_wrong"]
         b = seg["bboxes"][0]
         w = 8 + 4.6 * len(seg["label"])
-        x = max(4, b[0] - w - 6)
-        y = b[1] + (b[3] - b[1]) / 2
-        while any(abs(y - u) < 13 for u in used_y):
-            y += 13
-        used_y.append(y)
+        target = b[1] + (b[3] - b[1]) / 2
+        x, y = _label_slot(used, target, b[0], w, W, H)
         r = pymupdf.Rect(x, y - 6, x + w, y + 6)
+        if abs(y - target) > 6 or x > b[0]:  # 줄에서 떨어진 라벨은 연결선으로 위치를 이어 준다 (Codex C17)
+            end = pymupdf.Point(b[0], target) if x < b[0] else pymupdf.Point(b[2], target)
+            page.draw_line(pymupdf.Point(x + w if x < b[0] else x, y), end, color=tc, width=0.4)
         page.draw_rect(r, color=tc, fill=bg, width=0.6)
         page.insert_text(pymupdf.Point(x + 4, y + 2.4), seg["label"], fontname="helv", fontsize=6.8, color=tc)
+
+
+def _label_slot(used: dict, target: float, line_x: float, w: float, W: float, H: float) -> tuple[float, float]:
+    """라벨이 겹치지 않고 페이지 안에 들어가는 자리: 왼쪽 여백 열 → 그 왼쪽 열 → 오른쪽 여백 순."""
+    cols, x = [], line_x - w - 6
+    while x >= 2:
+        cols.append(x)
+        x -= w + 3
+    cols.append(W - w - 4)
+    ys = [target + k * 13 for k in range(0, 200) if target + k * 13 <= H - 8]
+    ys += [target - k * 13 for k in range(1, 200) if target - k * 13 >= 8]
+    for x in cols:
+        taken = used.setdefault(round(x), [])
+        for y in ys:
+            if all(abs(y - u) >= 13 for u in taken):
+                taken.append(y)
+                return x, y
+    return cols[-1], min(max(target, 8), H - 8)  # 페이지가 라벨로 가득 찬 극단적인 경우
 
 
 def _page_header(page, text: str):

@@ -6,15 +6,15 @@
 """
 from __future__ import annotations
 
+from .. import integrity
 from ..config import criteria
-
-EXPORTABLE = ("approved",)
-DRAFT = ("approved", "auto_pass", "warn")
 
 
 def select(items: list[dict], draft: bool = False, batch: int | None = None) -> list[dict]:
-    ok = DRAFT if draft else EXPORTABLE
-    out = [it for it in items if it.get("status") in ok and it.get("source_pages")]
+    """최종: 승인 + 현재 내용 검증·승인 해시 일치(integrity.is_exportable).
+    초안: 현재 내용이 G1~G6을 통과한 문항(승인 전 포함). 수동확인·재검증 대기 문항은 어느 쪽에도 들어가지 않는다."""
+    ok = integrity.is_draftable if draft else integrity.is_exportable
+    out = [it for it in items if ok(it)]
     if batch is not None:
         out = [it for it in out if it.get("batch") == batch]
     return out

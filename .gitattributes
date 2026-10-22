@@ -1,0 +1,2 @@
+# Windows 배치 파일은 CRLF 그대로 저장한다(GitHub ZIP으로 받아도 동작하도록)
+*.bat -text

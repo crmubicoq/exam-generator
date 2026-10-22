@@ -201,11 +201,13 @@ def test_mock_pipeline_and_evidence_pdf(sample_project, tmp_path):
     b = start_batch(sample_project, LLMSettings(provider="mock", workers=2), slots, opts, background=False)
     pr = sample_project.read_progress(b)
     # 실제 난이도가 모자라면 배치 끝에 보충 슬롯이 추가된다(slots_total ≥ 20)
-    assert pr["status"] == "done" and pr["accepted"] + pr["manual"] <= pr["slots_total"]
-    assert pr["slots_total"] == 20 or pr.get("topup")
+    # 간헐 실패 진단용: 실패하면 배치 진행 상황과 문제 문항을 함께 보여 준다
+    assert pr["status"] == "done" and pr["accepted"] + pr["manual"] <= pr["slots_total"], pr
+    assert pr["slots_total"] == 20 or pr.get("topup"), pr
     items = sample_project.items(batch=b)
     passed = [it for it in items if it["status"] in ("auto_pass", "warn")]
-    assert passed and all(it["source_pages"] for it in passed)
+    assert passed, (pr, [(it["key"], it["status"], it["validation"].get("fails")) for it in items])
+    assert all(it["source_pages"] for it in passed), [it["key"] for it in passed if not it["source_pages"]]
     r = evidence_pdf.build(sample_project, items, tmp_path / "e.pdf", mode="extract", draft=True, batch=b)
     assert r["no_highlight"] == []
     doc = pymupdf.open(r["path"])

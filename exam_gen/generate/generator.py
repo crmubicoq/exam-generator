@@ -52,6 +52,7 @@ class Pipeline:
     def __init__(self, project: Project, settings, batch: int, slots: list[dict], options: dict):
         self.p = project
         self.s = settings
+        self.cue_retried: set[str] = set()  # 정답 단서로 한 번 다시 출제한 슬롯
         self.batch = batch
         self.slots = slots
         self.opts = options
@@ -364,6 +365,11 @@ class Pipeline:
         for (item, s), (f, w, raw) in zip(keep, v5.values()):
             item["validation"]["G5"] = raw
             item["validation"]["warnings"] += w
+            cue = [x for x in w if x.startswith("G5[보기] 정답 단서")]
+            if not f and cue and s["sid"] not in self.cue_retried                     and item["validation"]["attempts"] <= self.opts.get("max_retries", 3):
+                # 명확한 정답 단서는 경고로 쌓지 않고 한 번 다시 출제한다(Codex 시험 3 검수). 두 번째는 경고로 통과
+                self.cue_retried.add(s["sid"])
+                f = [f"{cue[0]} — 단서를 없애 다시 출제(보기 4개의 어조·형식·종류를 맞추고, 차이를 조건·경로·역할에 둘 것)"]
             if f:
                 self._fail(item, s, f, feedback, last, failed)
             else:

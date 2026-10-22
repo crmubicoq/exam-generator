@@ -51,6 +51,9 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
                 elif c["result"] in ("fail", "warn"):
                     warns.append(msg)
             fails += _trap_fails(items[ids.index(i)], r.get("traps"))
+            if items[ids.index(i)].get("type") == "short" and r.get("short_term") != "concept":
+                fails.append("G5[단답 용어] 빈칸 정답이 원고가 정의·구분하는 용어가 아니라 일반 표현임 — 다른 말도 들어갈 수 있으므로 "
+                             "원고의 개념·분류·역할 이름을 묻도록 다시 출제")
             want, got_lv = items[ids.index(i)].get("difficulty"), r.get("assessed_difficulty")
             if got_lv not in LEVELS:
                 fails.append("G5: 실제 난이도 판정 누락")

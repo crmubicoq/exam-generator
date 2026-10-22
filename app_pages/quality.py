@@ -111,9 +111,24 @@ with st.container(border=True):
                 st.rerun()
             except Exception as e:  # noqa: BLE001
                 st.error(f"점검에 실패했습니다: {e}")
-    for g in (pr or {}).get("groups", []):
-        st.markdown(f"- **{g['principle']}** — {', '.join(g['keys'])}  \n"
-                    f"  <span style='color:#666;font-size:0.9em'>{g['note']}</span>", unsafe_allow_html=True)
+    from exam_gen import review_ops  # noqa: E402
+    for gi, g in enumerate((pr or {}).get("groups", [])):
+        live = [k for k in g["keys"] if (p.item(k) or {}).get("status") not in (None, "deleted")]
+        st.markdown(f"**{gi + 1}. {g['principle']}** — {', '.join(g['keys'])}  \n"
+                    f"<span style='color:#666;font-size:0.9em'>{g['note']}</span>", unsafe_allow_html=True)
+        if len(live) < 2:
+            st.caption("정리됨: 남은 문항 " + (", ".join(live) or "없음"))
+            continue
+        # 같은 원리는 기본 1문항(Codex 권고). 묻는 조건이 달라 함께 써도 되면 그대로 둔다
+        c1, c2 = st.columns([2, 2])
+        keep = c1.selectbox("남길 문항", live, key=f"pool_keep_{gi}",
+                            format_func=lambda k: f"{k} · {(p.item(k) or {}).get('stem', '')[:40]}")
+        if c2.button(f"나머지 {len(live) - 1}문항 삭제", key=f"pool_del_{gi}", icon=":material/delete:", width="stretch",
+                     help="삭제한 문항은 검수 화면 '삭제' 대기열에서 복원할 수 있습니다."):
+            for k in live:
+                if k != keep:
+                    review_ops.set_status(p, k, "deleted", f"같은 원리 반복 — {keep}만 남김: {g['principle']}")
+            st.rerun()
 
 # ---------- 문제 문항 ----------
 st.subheader(f":material/report: 문제 문항 {len(r['issues'])}개")

@@ -359,7 +359,7 @@ def test_pool_review_flags_same_principle_items(sample_project):
     from exam_gen.validate import pool_review
     p = sample_project
     base = {"type": "ox", "difficulty": "하", "answer": "O", "stem": "x", "explanation": "", "evidence": [],
-            "status": "warn", "chasi": 1, "page": 0, "batch": 1, "slot": {"sid": "S1"}, "validation": {"warnings": []}}
+            "status": "warn", "chasi": 1, "page": 0, "batch": 999, "slot": {"sid": "S1"}, "validation": {"warnings": []}}
     for i, kp in enumerate(["독립 확인 경로를 써야 한다 A", "독립 확인 경로를 써야 한다 B", "FDS는 목적을 모른다"]):
         p.save_item({**copy.deepcopy(base), "key": f"K9000{i}", "key_point": kp})
     r = pool_review.run(p, MOCK)
@@ -369,3 +369,24 @@ def test_pool_review_flags_same_principle_items(sample_project):
     assert not any(x.startswith(pool_review.PREFIX) for x in p.item("K90002")["validation"]["warnings"])
     pool_review.run(p, MOCK)  # 다시 점검해도 경고가 중복되지 않는다
     assert sum(x.startswith(pool_review.PREFIX) for x in p.item("K90000")["validation"]["warnings"]) == 1
+    for i in range(3):  # 세션 공용 프로젝트이므로 다른 테스트(배치·통과 문항 집계)에 섞이지 않게 정리
+        review_ops.set_status(p, f"K9000{i}", "deleted", "테스트 정리")
+
+
+# ---------- Codex 시험 3 검수(2026-10-22) ----------
+def test_short_answer_must_be_concept_term(sample_project):
+    class Fake:
+        def __init__(self, term):
+            self.term = term
+
+        def structured(self, system, user, schema, **k):
+            return {"results": [{"id": i, "checks": [{"id": c, "result": "pass", "note": ""} for c in schema_checks],
+                                 "traps": [], "short_term": self.term, "assessed_difficulty": "하",
+                                 "accept_variants": [], "suggestion": ""} for i in k["context"]["ids"]]}
+
+    schema_checks = schema.REVIEW_CHECKS
+    item = {"type": "short", "difficulty": "하", "page": 1, "stem": "x", "answer": "조합", "explanation": "", "evidence": []}
+    f, _, _ = review_llm.review(Fake("phrase"), MOCK, sample_project, [item])["1"]
+    assert any("단답 용어" in x for x in f)
+    f, _, _ = review_llm.review(Fake("concept"), MOCK, sample_project, [item])["1"]
+    assert f == []

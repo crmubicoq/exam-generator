@@ -54,9 +54,12 @@ TRAP_VERDICTS = {"contradiction": "원고와 모순", "compatible": "원고와 �
 REVIEW_SCHEMA = {
     "type": "object", "required": ["results"],
     "properties": {"results": {"type": "array", "items": {
-        "type": "object", "required": ["id", "checks", "traps", "assessed_difficulty", "accept_variants", "suggestion"],
+        "type": "object", "required": ["id", "checks", "traps", "short_term", "assessed_difficulty", "accept_variants",
+                                       "suggestion"],
         "properties": {
             "id": _STR,
+            # 단답형 정답이 원고가 정의·구분하는 용어인지(Codex 시험 3: '조합', '모든 분께 똑같이' 같은 일반 표현 빈칸)
+            "short_term": {"type": "string", "enum": ["concept", "phrase", "not_short"]},
             "traps": {"type": "array", "items": {"type": "object", "required": ["target", "verdict", "conflict"],
                                                  "properties": {"target": _STR,
                                                                 "verdict": {"type": "string", "enum": list(TRAP_VERDICTS)},

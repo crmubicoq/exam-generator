@@ -76,3 +76,12 @@ def test_short_answer_variants_merge_and_excel_scoring():
     assert any("허용 답안 자동 추가" in w for w in item["validation"]["warnings"])
     assert "보험 리모델링" in _scoring(item, {"scoring": "시스템 자동채점"})
     assert merge_variants({"type": "ox", "validation": {}}) == []
+
+
+def test_last_project_is_remembered(tmp_path, monkeypatch):
+    from exam_gen import store
+    monkeypatch.setattr(store, "_UI_STATE", tmp_path / "ui_state.json")
+    assert store.last_project() == {}
+    store.set_last_project("과정A", by="cli")
+    st = store.last_project()
+    assert st["project"] == "과정A" and st["by"] == "cli" and st["at"]

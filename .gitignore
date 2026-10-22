@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .env
 data/settings.json
+data/ui_state.json
 projects/
 *.tmp
 

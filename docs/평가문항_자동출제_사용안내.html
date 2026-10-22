@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>평가문항 자동 출제 사용 안내</title>
+<style>
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --text:#1d2330; --muted:#5b6475; --line:#dde1e8;
+  --accent:#d6453d; --accent-soft:#fde9e7; --ok:#1a7f37; --ok-soft:#e3f4e8; --warn:#9a5b00; --warn-soft:#fff3d6;
+  --info:#0b62c4; --info-soft:#e4effc; --gray-soft:#eceef2; --hl-y:#fff2a8; --hl-o:#ffd2a6;
+  --radius:12px; --shadow:0 1px 2px rgba(20,25,35,.06),0 2px 8px rgba(20,25,35,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171c; --surface:#1c2027; --surface-2:#232832; --text:#e7eaf0; --muted:#a3abba; --line:#323846;
+    --accent:#ff7a70; --accent-soft:#3a1f1e; --ok:#5bd17f; --ok-soft:#163222; --warn:#f2b44c; --warn-soft:#3a2d12;
+    --info:#7ab4ff; --info-soft:#15263d; --gray-soft:#2a2f39; --hl-y:#6b5d10; --hl-o:#6e4220;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171c; --surface:#1c2027; --surface-2:#232832; --text:#e7eaf0; --muted:#a3abba; --line:#323846;
+  --accent:#ff7a70; --accent-soft:#3a1f1e; --ok:#5bd17f; --ok-soft:#163222; --warn:#f2b44c; --warn-soft:#3a2d12;
+  --info:#7ab4ff; --info-soft:#15263d; --gray-soft:#2a2f39; --hl-y:#6b5d10; --hl-o:#6e4220;
+  --shadow:none;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;
+  font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 16px 80px}
+header.top{margin-bottom:28px}
+.kicker{color:var(--accent);font-weight:700;font-size:.9rem;letter-spacing:.02em}
+h1{font-size:2rem;line-height:1.3;margin:.3rem 0 .6rem}
+.lead{color:var(--muted);margin:0;max-width:760px}
+nav.toc{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 8px}
+nav.toc a{font-size:.88rem;text-decoration:none;color:var(--text);background:var(--surface);border:1px solid var(--line);
+  padding:5px 12px;border-radius:999px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:24px 24px 20px;margin:18px 0}
+h2{font-size:1.35rem;margin:0 0 12px;display:flex;align-items:center;gap:10px}
+h2 .num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;
+  background:var(--accent-soft);color:var(--accent);font-size:.95rem}
+h3{font-size:1.05rem;margin:20px 0 6px}
+p{margin:.4rem 0 .8rem}
+.muted{color:var(--muted)}
+.small{font-size:.88rem}
+ul,ol{margin:.3rem 0 .8rem;padding-left:1.3rem}
+li{margin:.15rem 0}
+b,strong{font-weight:700}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--surface-2)}
+.card h4{margin:0 0 4px;font-size:1rem}
+.card p{margin:0;font-size:.93rem;color:var(--muted)}
+.star{color:var(--accent);font-weight:800}
+
+/* 파이프라인 */
+.flow{display:flex;align-items:stretch;gap:0;margin:8px 0 6px;overflow-x:auto;padding-bottom:4px}
+.step{flex:1 1 0;min-width:138px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 12px 10px;position:relative}
+.step .tag{font-size:.75rem;font-weight:700;color:var(--muted)}
+.step .name{font-weight:800;font-size:1rem;margin:2px 0 4px}
+.step .desc{font-size:.84rem;color:var(--muted);line-height:1.55}
+.step.who-ai{border-top:3px solid var(--info)}
+.step.who-human{border-top:3px solid var(--accent)}
+.step.who-auto{border-top:3px solid var(--ok)}
+.arrow{flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:1.1rem}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.84rem;color:var(--muted);margin-top:6px}
+.legend span::before{content:"";display:inline-block;width:12px;height:3px;margin-right:6px;vertical-align:middle;border-radius:2px}
+.legend .l-human::before{background:var(--accent)} .legend .l-ai::before{background:var(--info)} .legend .l-auto::before{background:var(--ok)}
+
+.gates{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;margin:10px 0}
+.gate{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--surface-2)}
+.gate .g{font-size:.75rem;font-weight:800;color:var(--info)}
+.gate.human .g{color:var(--accent)}
+.gate .t{font-weight:700;font-size:.93rem;margin:2px 0}
+.gate .d{font-size:.8rem;color:var(--muted);line-height:1.5}
+.loop{display:flex;gap:10px;align-items:flex-start;background:var(--warn-soft);border-radius:10px;padding:10px 14px;font-size:.92rem}
+.loop b{color:var(--warn)}
+
+table{width:100%;border-collapse:collapse;font-size:.92rem;margin:6px 0 10px}
+th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--surface-2);font-weight:700;white-space:nowrap}
+.tbl{overflow-x:auto}
+.badge{display:inline-block;font-size:.8rem;font-weight:700;padding:1px 9px;border-radius:999px;white-space:nowrap}
+.b-ok{background:var(--ok-soft);color:var(--ok)} .b-warn{background:var(--warn-soft);color:var(--warn)}
+.b-red{background:var(--accent-soft);color:var(--accent)} .b-info{background:var(--info-soft);color:var(--info)}
+.b-gray{background:var(--gray-soft);color:var(--muted)}
+.hl-y{background:var(--hl-y);padding:0 4px;border-radius:3px} .hl-o{background:var(--hl-o);padding:0 4px;border-radius:3px}
+.note{border-left:4px solid var(--info);background:var(--info-soft);padding:10px 14px;border-radius:0 10px 10px 0;margin:10px 0;font-size:.93rem}
+.caution{border-left:4px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 10px 10px 0;margin:10px 0;font-size:.93rem}
+.screen{display:grid;grid-template-columns:150px 1fr;gap:4px 18px;padding:12px 0;border-bottom:1px dashed var(--line)}
+.screen:last-child{border-bottom:none}
+.screen .sname{font-weight:800}
+.screen .sname small{display:block;font-weight:500;color:var(--muted);font-size:.8rem}
+.screen ol{margin:0}
+.time{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.time .card .big{font-size:1.6rem;font-weight:800;color:var(--text);margin:2px 0}
+details{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0;background:var(--surface-2)}
+summary{cursor:pointer;font-weight:700}
+footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:28px}
+@media (max-width: 860px){
+  .grid3,.time{grid-template-columns:1fr}
+  .gates{grid-template-columns:repeat(2,1fr)}
+  .flow{flex-direction:column}
+  .arrow{transform:rotate(90deg);height:22px}
+  .screen{grid-template-columns:1fr}
+  h1{font-size:1.6rem}
+  section{padding:18px 16px}
+}
+@media print{
+  body{background:#fff} section{box-shadow:none;break-inside:avoid} nav.toc{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="kicker">프로토타입 · 2026-10-22</div>
+  <h1>평가문항 자동 출제 사용 안내</h1>
+  <p class="lead">강의 원고를 올리면 원고 전체에 고르게 평가문항을 만들고, 자동 검증과 사람 검수를 거쳐 <b>제출 양식 엑셀</b>과 <b>원고 위에 출처를 표시한 근거PDF</b>로 내보내는 도구입니다. 이 문서는 처리 과정(파이프라인)과 화면별 사용법을 한 장에 정리했습니다.</p>
+  <nav class="toc">
+    <a href="#principle">1. 핵심 원칙</a><a href="#pipeline">2. 처리 과정</a><a href="#gates">3. 자동 검증</a>
+    <a href="#screens">4. 화면별 사용법</a><a href="#status">5. 문항 상태</a><a href="#output">6. 출력물</a>
+    <a href="#time">7. 소요 시간</a><a href="#faq">8. 자주 묻는 질문</a><a href="#decide">9. 결정이 필요한 사항</a>
+  </nav>
+</header>
+
+<section id="principle">
+  <h2><span class="num">1</span>핵심 원칙 세 가지</h2>
+  <div class="grid3">
+    <div class="card"><h4><span class="star">★</span> 원고 전반 출제</h4><p>출제 전에 페이지마다 문항 수를 분량에 비례해 먼저 나눕니다. 특정 부분에 몰리지 않고, 필요하면 페이지별 문항 수를 직접 지정할 수 있습니다.</p></div>
+    <div class="card"><h4><span class="star">★</span> 원고 위 출처 표시</h4><p>AI가 근거 문장을 인용하면 프로그램이 원고에서 그 문장을 직접 찾아 줄 단위로 색칠하고 문항 라벨을 붙입니다. 원고에서 찾지 못한 문항은 출력되지 않습니다.</p></div>
+    <div class="card"><h4><span class="star">★</span> 신뢰도</h4><p>문항마다 여섯 단계 자동 검증을 거치고, <b>사람이 승인한 문항만</b> 최종 엑셀과 근거PDF에 들어갑니다. 승인 후 내용을 고치면 승인이 풀리고 다시 검증해야 합니다.</p></div>
+  </div>
+</section>
+
+<section id="pipeline">
+  <h2><span class="num">2</span>처리 과정 한눈에 보기</h2>
+  <div class="flow" role="list">
+    <div class="step who-human" role="listitem"><div class="tag">사람</div><div class="name">① 원고 등록</div><div class="desc">PDF·PPTX·DOCX·HWP 업로드, 쪽수 확인, 차시·제외 페이지 지정</div></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step who-human" role="listitem"><div class="tag">사람</div><div class="name">② 출제 옵션</div><div class="desc">문항 수, 난이도·유형 비율, 페이지 할당 확인 후 출제 시작</div></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step who-auto" role="listitem"><div class="tag">프로그램</div><div class="name">③ 출제 계획</div><div class="desc">페이지·유형·난이도·정답 위치를 문항마다 미리 확정</div></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step who-ai" role="listitem"><div class="tag">AI + 프로그램</div><div class="name">④ 출제·자동 검증</div><div class="desc">페이지 단위로 문항 생성 → 6단계 검증 → 탈락하면 다시 출제</div></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step who-human" role="listitem"><div class="tag">사람</div><div class="name">⑤ 검수·승인</div><div class="desc">품질 리포트 확인, 문항과 원고 근거를 나란히 보고 승인·수정·삭제</div></div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step who-auto" role="listitem"><div class="tag">프로그램</div><div class="name">⑥ 출력</div><div class="desc">양식 엑셀, 문항별 근거PDF, 원고 전체 근거PDF</div></div>
+  </div>
+  <div class="legend"><span class="l-human">사람이 하는 일</span><span class="l-ai">AI가 하는 일</span><span class="l-auto">프로그램이 자동으로 하는 일</span></div>
+  <div class="note">추가 출제도 같은 흐름입니다. 기존 문항과 겹치지 않게 출제하고, 문항이 적은 페이지에 더 배분합니다. 문항 번호는 기존 번호에 이어서 매겨집니다.</div>
+</section>
+
+<section id="gates">
+  <h2><span class="num">3</span>문항 하나가 거치는 검증 단계</h2>
+  <p class="muted small">화면과 리포트에서는 각 단계를 G1~G7로 부릅니다.</p>
+  <div class="gates">
+    <div class="gate"><div class="g">G1</div><div class="t">형식 검사</div><div class="d">보기 4개, 정답 번호, 유형별 형식이 맞는지</div></div>
+    <div class="gate"><div class="g">G2</div><div class="t">근거 대조</div><div class="d">인용한 근거 문장을 원고에서 실제로 찾음. 쪽수는 프로그램이 확정</div></div>
+    <div class="gate"><div class="g">G3</div><div class="t">지침 규칙</div><div class="d">문어체, '원고'·쪽수 노출, 단답 조사 힌트, 절대어, 발문 형식 등</div></div>
+    <div class="gate"><div class="g">G4</div><div class="t">독립 풀이</div><div class="d">정답을 모르는 별도 AI가 문항을 풀어 정답이 일치하는지</div></div>
+    <div class="gate"><div class="g">G5</div><div class="t">AI 검수</div><div class="d">정답·해설·보기·이의 제기·지엽성 등 9개 항목과 실제 난이도 판정</div></div>
+    <div class="gate"><div class="g">G6</div><div class="t">중복 검사</div><div class="d">기존 문항과 문장·판단 포인트·근거 위치가 겹치는지</div></div>
+    <div class="gate human"><div class="g">G7</div><div class="t">사람 승인</div><div class="d">검수 화면에서 승인한 문항만 최종 출력</div></div>
+  </div>
+  <div class="loop"><b>탈락하면</b><span>탈락 사유를 알려 주고 같은 조건으로 다시 출제합니다(기본 3회). 그래도 통과하지 못하면 <span class="badge b-red">수동확인</span>으로 분류되고 출력되지 않습니다.</span></div>
+  <h3>근거 대조 결과 표시</h3>
+  <ul>
+    <li><b>L2 (원문 일치)</b>: 근거 문장이 원고와 글자 단위로 일치합니다.</li>
+    <li><b>L1 (부분 일치)</b>: 일부만 일치합니다. 승인하려면 검수자가 원고 하이라이트를 직접 보고 <b>'근거 확인'</b>에 체크해야 합니다. 숫자·부정어·의무/금지 표현이 바뀐 경우는 L1로도 인정하지 않습니다.</li>
+  </ul>
+</section>
+
+<section id="screens">
+  <h2><span class="num">4</span>화면별 사용법</h2>
+  <p class="muted small">왼쪽 메뉴 순서대로 진행합니다. 사이드바 아래 '프로젝트'에서 작업할 과정을 고르거나 새로 만듭니다. 마지막에 작업한 프로젝트는 다시 열어도 그대로 선택되어 있습니다.</p>
+
+  <div class="screen"><div class="sname">홈<small>시작</small></div><div>
+    <ol><li>'지금 할 일'에 현재 상태에 맞는 다음 단계와 바로 가기 버튼이 나옵니다.</li>
+    <li>단계별 진행 상태(완료·진행 중·대기)와 문항 수를 확인합니다. 처음이면 '사용 안내'를 펼쳐 용어 풀이를 봅니다.</li></ol></div></div>
+
+  <div class="screen"><div class="sname">원고 등록<small>준비</small></div><div>
+    <ol><li>원고 파일을 올립니다. HWP는 한글 프로그램으로 PDF 변환을 시도하고, 안 되면 한글에서 PDF로 저장해 올립니다.</li>
+    <li><b>쪽수 확인</b>: 원고에 인쇄된 쪽 번호를 자동으로 찾습니다. 미리보기와 비교해 맞으면 '이 매핑으로 확정'을 누릅니다. <b>확정하기 전에는 출제를 시작할 수 없습니다.</b></li>
+    <li>과목/주제명과 <b>학습목표</b>를 입력합니다. 학습목표는 AI가 '중요한 내용인지' 판단하는 기준입니다.</li>
+    <li>페이지 표에서 <b>차시</b>를 지정하고, 표지·목차·부록처럼 출제하지 않을 페이지는 '제외'에 체크합니다.</li></ol></div></div>
+
+  <div class="screen"><div class="sname">출제 옵션<small>준비</small></div><div>
+    <ol><li>출제 종류를 고릅니다: <b>최초 출제</b> / <b>추가 출제</b>(기존과 겹치지 않게) / <b>페이지 재출제</b>(지정한 페이지만).</li>
+    <li>난이도 비율(최상·상·중·하, 합계 100)과 유형 비율(선다·진위·단답, 합계 100)을 정합니다.</li>
+    <li>문항 수와 여유분(삭제에 대비해 조금 더 출제)을 정하면 페이지별 배분, 예상 시간, 구성 요약이 바로 나옵니다.</li>
+    <li>설정에 문제가 있으면(합계 불일치 등) 시작 버튼 위에 이유가 표시됩니다. 문제가 없으면 출제를 시작합니다.</li></ol></div></div>
+
+  <div class="screen"><div class="sname">출제 진행<small>출제</small></div><div>
+    <ol><li>진행률, 통과·경고·수동확인 수, 검증 단계별 탈락 수, 페이지별 분포가 실시간으로 바뀝니다.</li>
+    <li>중간에 멈추거나 인터넷이 끊겨도 <b>'이어서 출제'</b>로 남은 부분만 계속할 수 있습니다.</li>
+    <li>끝나면 '품질 리포트 보기'로 넘어갑니다.</li></ol></div></div>
+
+  <div class="screen"><div class="sname">품질 리포트<small>검수·출력</small></div><div>
+    <ol><li>정답·이의 제기·출처·원고 전반·형식·변별력·난이도를 A~D 등급으로 보여 줍니다(A 납품 수준, D 재출제 권장).</li>
+    <li>목표 대비 실제 난이도·유형·정답 위치 분포를 확인합니다.</li>
+    <li>문제 문항 목록에서 하나를 고르면 검수 화면에서 바로 열립니다.</li></ol>
+    <p class="small muted">등급은 AI 검수 경고를 센 값입니다. 실제 응시 결과가 아니며, 무엇을 먼저 볼지 정하는 데 씁니다.</p></div></div>
+
+  <div class="screen"><div class="sname">검수<small>검수·출력</small></div><div>
+    <ol><li>위쪽 대기열에서 <b>확인 필요</b>(경고·수동확인)부터 봅니다. 왼쪽 목록에서 문항을 고르면 오른쪽에 문항, 원고 근거(하이라이트), 검증 상세, 이력이 나옵니다.</li>
+    <li>검수자 이름을 입력하고 <b>승인</b>을 누르면 다음 문항으로 넘어갑니다. 경고 내용은 승인 전에 반드시 읽습니다.</li>
+    <li>고칠 내용이 있으면 '문항 수정'에서 고친 뒤 <b>LLM 재검증</b>을 눌러야 승인할 수 있습니다.</li>
+    <li>쓸 수 없는 문항은 <b>삭제</b>합니다(사유 기록). <b>일괄 승인</b>은 경고가 없는 '자동통과' 문항에만 적용됩니다.</li></ol></div></div>
+
+  <div class="screen"><div class="sname">출력<small>검수·출력</small></div><div>
+    <ol><li>출력 범위(전체 또는 특정 배치)를 고릅니다. 배치는 출제를 한 번 실행한 회차입니다.</li>
+    <li>'초안 출력'을 켜면 승인 전 문항도 미리보기로 넣습니다(파일 이름과 엑셀 첫 줄에 '초안' 표시). 납품용은 끈 상태로 만듭니다.</li>
+    <li>엑셀, 문항별 근거PDF, 원고 전체 근거PDF를 각각 만들고 내려받습니다. 파일은 프로젝트 폴더의 exports에도 저장됩니다.</li></ol></div></div>
+</section>
+
+<section id="status">
+  <h2><span class="num">5</span>문항 상태</h2>
+  <div class="tbl"><table>
+    <tr><th>상태</th><th>뜻</th><th>최종 출력</th><th>할 일</th></tr>
+    <tr><td><span class="badge b-ok">자동통과</span></td><td>자동 검증을 모두 통과하고 경고도 없음</td><td>승인 후 포함</td><td>훑어보고 승인(일괄 승인 가능)</td></tr>
+    <tr><td><span class="badge b-warn">경고</span></td><td>통과했지만 AI 검수가 확인을 권한 내용이 있음</td><td>승인 후 포함</td><td>경고를 읽고 판단 → 승인·수정·삭제</td></tr>
+    <tr><td><span class="badge b-red">수동확인</span></td><td>재출제 후에도 자동 검증에서 탈락</td><td>포함 안 됨</td><td>고쳐서 재검증하거나 삭제</td></tr>
+    <tr><td><span class="badge b-info">승인</span></td><td>사람이 승인함(승인 당시 내용 기준)</td><td><b>포함</b></td><td>—</td></tr>
+    <tr><td><span class="badge b-gray">삭제</span></td><td>사람이 뺀 문항(사유 기록)</td><td>포함 안 됨</td><td>필요하면 복원(복원 후 다시 승인)</td></tr>
+  </table></div>
+</section>
+
+<section id="output">
+  <h2><span class="num">6</span>출력물</h2>
+  <h3>평가문항 엑셀 (제출 양식 그대로, 4행부터)</h3>
+  <div class="tbl"><table>
+    <tr><th>시트</th><th>내용</th></tr>
+    <tr><td>최종 시트</td><td>승인 문항만. A 차시 · B 유형 · C 책 쪽수 · D 번호 · E 문제 · F~I 보기 · J 정답(진위형 1=O, 2=X) · K 해설 · L 채점기준(단답형은 허용 답안 함께 표기) · M 배점. 오른쪽 숨김 열 R~Y에 문항키·난이도·근거 원문·검증 메모·근거PDF 라벨 등</td></tr>
+    <tr><td>검수용(수정표시) — 숨김</td><td>삭제·수동확인 문항은 <span class="badge b-gray">회색 줄</span>, 사람이 고친 칸은 노란 바탕에 빨간 글씨</td></tr>
+    <tr><td>검증리포트</td><td>상태별 수, 난이도·유형 목표 대비 실제, 정답 위치·O/X 분포, 페이지별 출제 수, 배치별 검증 통계</td></tr>
+  </table></div>
+  <h3>근거PDF 두 종류</h3>
+  <div class="tbl"><table>
+    <tr><th></th><th>문항별 추출본</th><th>원고 전체 표시본</th></tr>
+    <tr><td>쓰는 때</td><td>문항 하나씩 근거를 검토할 때</td><td>원고 전체에 고르게 출제됐는지 볼 때</td></tr>
+    <tr><td>구성</td><td>표지·문항 인덱스·사용 안내 → 문항마다 안내 페이지(발문·보기·정답·해설) + 근거 원고 페이지</td><td>원고 각 페이지를 한 번씩 넣고 그 페이지에서 나온 모든 문항 라벨 표시</td></tr>
+    <tr><td>분량</td><td>문항이 늘수록 커짐(차시별 파일로 나누기 가능)</td><td>원고 분량 정도로 유지</td></tr>
+  </table></div>
+  <p><b>색상</b>: <span class="hl-y">노란색</span> 옳은 진술(정답)의 근거 · <span class="hl-o">주황색</span> 함정 보기가 바꾼 원래 문장<br>
+  <b>라벨</b>: 선다형 Q12-1~4(보기 번호) · 조합형 Q28-A~D(ㄱ~ㄹ) · 진위형 Q40-OX · 단답형 Q55-A</p>
+</section>
+
+<section id="time">
+  <h2><span class="num">7</span>소요 시간과 비용</h2>
+  <div class="time">
+    <div class="card"><h4>30문항</h4><div class="big">약 8분</div><p>실측(실제 원고 286쪽, AI 호출 약 100회)</p></div>
+    <div class="card"><h4>300문항 (+여유 5%)</h4><div class="big">약 1시간 30분</div><p>추정: 실측 비율로 계산, 서버 상태에 따라 1~2시간. AI 호출 약 1,050회</p></div>
+    <div class="card"><h4>시연용 5~10문항</h4><div class="big">약 2~3분</div><p>진행 화면과 검증 과정을 보여 주기에 알맞음</p></div>
+  </div>
+  <ul class="small">
+    <li>시간 대부분은 클라우드 AI의 응답을 기다리는 시간입니다. <b>PC 사양과는 거의 관계가 없고</b>, 인터넷 연결과 AI 서버 상태에 따라 달라집니다.</li>
+    <li>구독 로그인(Claude·Codex)으로 쓰면 별도 청구 없이 구독 사용량에서 차감됩니다. 한 번에 많이 출제하면 사용 한도에 걸려 잠시 멈출 수 있으며, 그 경우 '이어서 출제'로 계속합니다.</li>
+    <li>API 키 방식으로 바꾸면 실제 비용이 청구됩니다. 실측 기준 문항당 약 0.3달러(300문항 약 90~100달러)로 추정합니다.</li>
+  </ul>
+</section>
+
+<section id="faq">
+  <h2><span class="num">8</span>자주 묻는 질문</h2>
+  <details><summary>승인했는데 출력에 안 나옵니다.</summary><p>출력 범위가 다른 배치로 되어 있지 않은지 확인합니다. 승인 후 내용을 고치면 승인이 풀리므로 'LLM 재검증' 후 다시 승인해야 합니다.</p></details>
+  <details><summary>경고가 붙은 문항은 쓰면 안 되나요?</summary><p>아닙니다. 경고는 '사람이 한 번 보라'는 뜻입니다. 경고 내용을 읽고 문제없다고 판단하면 승인합니다. AI 검수가 정답·이의 제기·보기에 대해 '그대로 쓰면 안 됨'으로 판정한 문항은 자동으로 탈락(재출제)되고, 경고 문항에는 '확인 권장' 수준의 지적만 남습니다.</p></details>
+  <details><summary>문항 키(K00001)가 다른 과정과 겹칩니다.</summary><p>문항 키는 과정(프로젝트)마다 1번부터 매깁니다. 사이드바에서 선택한 프로젝트 이름을 확인합니다.</p></details>
+  <details><summary>HWP 원고가 변환되지 않습니다.</summary><p>한글 2010 이상은 자동 변환이 됩니다(처음 한 번 보안 승인 모듈 등록 필요). 한글 2007은 PDF 저장 기능이 없어, 한글에서 '인쇄 → Haansoft PDF'로 저장한 파일을 올립니다.</p></details>
+  <details><summary>원고와 문항은 어디에 저장되나요?</summary><p>모두 이 PC의 프로그램 폴더 안(projects/)에만 저장됩니다. 원고 파일은 저장소(GitHub)에 올리지 않습니다. AI 출제 시에는 해당 페이지 원문이 AI 서비스로 전송됩니다.</p></details>
+  <details><summary>원고의 기관명·법령이 바뀌었으면 어떻게 되나요?</summary><p>자동 검증은 원고를 기준으로 하므로 원고에 적힌 옛 명칭은 그대로 통과합니다. 대신 기관명·법령·금액 기준·전화번호·날짜가 든 문항에는 '시의성 확인' 경고가 붙고, 품질 리포트에 목록으로 나옵니다. 특히 '정답 관련'으로 표시된 문항은 원고 집필자·담당자와 최신 여부를 확인하세요.</p></details>
+  <details><summary>AI가 만든 문항을 그대로 써도 되나요?</summary><p>자동 검증은 사람 검수를 대신하지 않습니다. 실제 원고 시험 출제에서 정답 오류는 0건이었지만, 상식으로 정답이 보이는 보기와 단답형의 다른 표현 문제가 남아 있어 사람 검수가 꼭 필요합니다.</p></details>
+</section>
+
+<section id="decide">
+  <h2><span class="num">9</span>담당자와 결정이 필요한 사항</h2>
+  <div class="tbl"><table>
+    <tr><th>항목</th><th>현재 설정(임시)</th></tr>
+    <tr><td>차시 나누는 기준</td><td>실제 원고는 절 단위 5차시로 임시 지정. 소절 단위(21개)일 수도 있음</td></tr>
+    <tr><td>학습목표</td><td>원고에 없어 머리말·목차로 임시 작성. 공식 학습목표가 있으면 교체</td></tr>
+    <tr><td>출제 제외 범위</td><td>표지·머리말·목차, 부록·참고문헌 제외. 부록의 점검표·용어집을 출제할지</td></tr>
+    <tr><td>난이도·유형 기본 비율</td><td>최상 5 · 상 15 · 중 60 · 하 20 / 선다 50 · 진위 30 · 단답 20</td></tr>
+    <tr><td>단답형</td><td>난이도는 하·중만 배정. 허용 답안(동의어·영문 표기) 인정 범위</td></tr>
+    <tr><td>문항 번호 · NCS 열</td><td>양식 연번 사용, NCS 열(N~P)은 비움</td></tr>
+    <tr><td>태도·원칙 중심 과정의 변별력</td><td>"과신하지 말고 확인하라"류 내용은 오답이 상식으로 걸러지기 쉬움. 허용 수준 결정 필요</td></tr>
+    <tr><td>최신성(시의성) 확인</td><td>지금은 원고만 기준으로 검증하고 외부 확인은 하지 않음. 기관명·법령·금액 기준·전화번호·날짜가 든 문항에 '시의성 확인' 표시만 붙임. 웹 검색으로 최신 여부를 확인할지, 원고와 현재 사실이 다를 때 무엇을 기준으로 할지 결정 필요</td></tr>
+    <tr><td>LLM 사용 방식</td><td>현재 구독 로그인(Claude·Codex). 서비스 운영 시 API 키·사내 LiteLLM 중 선택</td></tr>
+  </table></div>
+</section>
+
+<footer>평가문항 자동 출제 도구 · 프로토타입 사용 안내 · 내용은 담당자 협의에 따라 바뀔 수 있습니다.</footer>
+</div>
+</body>
+</html>

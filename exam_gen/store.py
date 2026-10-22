@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pymupdf
 
-from .config import PROJECTS_DIR, criteria
+from .config import DATA_DIR, PROJECTS_DIR, criteria
 from .ingest import convert, page_map
 from .ingest.pdf_text import content_text, detect_ocr, extract_lines
 
@@ -36,6 +36,25 @@ def now() -> str:
 def slugify(name: str) -> str:
     s = re.sub(r"[^\w가-힣\-]+", "_", name.strip())
     return s.strip("_") or "project"
+
+
+_UI_STATE = DATA_DIR / "ui_state.json"
+
+
+def last_project() -> dict:
+    """마지막으로 작업한 프로젝트 {"project", "by": "ui"|"cli"} — 대시보드 새로고침·재시작 뒤에도 같은 프로젝트를 연다."""
+    try:
+        return json.loads(_UI_STATE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def set_last_project(slug: str, by: str = "ui"):
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _atomic_write(_UI_STATE, json.dumps({"project": slug, "by": by, "at": now()}, ensure_ascii=False))
+    except OSError:
+        pass  # 기억하지 못해도 동작에는 지장 없음
 
 
 def list_projects() -> list[str]:

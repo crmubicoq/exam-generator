@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>노트북 설치 안내</title>
+<style>
+:root{--bg:#f6f7f9;--surface:#fff;--surface-2:#f0f2f5;--text:#1d2330;--muted:#5b6475;--line:#dde1e8;
+  --accent:#d6453d;--accent-soft:#fde9e7;--ok:#1a7f37;--ok-soft:#e3f4e8;--info:#0b62c4;--info-soft:#e4effc}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#14171c;--surface:#1c2027;--surface-2:#232832;--text:#e7eaf0;
+  --muted:#a3abba;--line:#323846;--accent:#ff7a70;--accent-soft:#3a1f1e;--ok:#5bd17f;--ok-soft:#163222;--info:#7ab4ff;--info-soft:#15263d}}
+:root[data-theme="dark"]{--bg:#14171c;--surface:#1c2027;--surface-2:#232832;--text:#e7eaf0;--muted:#a3abba;--line:#323846;
+  --accent:#ff7a70;--accent-soft:#3a1f1e;--ok:#5bd17f;--ok-soft:#163222;--info:#7ab4ff;--info-soft:#15263d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Pretendard","Noto Sans KR","Malgun Gothic",system-ui,sans-serif;line-height:1.7;font-size:16px}
+.wrap{max-width:900px;margin:0 auto;padding:28px 16px 64px}
+h1{font-size:1.8rem;margin:.2rem 0 .4rem}
+.lead{color:var(--muted);margin:0 0 18px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin:14px 0}
+h2{font-size:1.2rem;margin:0 0 10px;display:flex;gap:10px;align-items:center}
+.n{display:inline-flex;width:28px;height:28px;border-radius:8px;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent);font-size:.95rem}
+.where{display:inline-block;font-size:.78rem;font-weight:700;padding:1px 9px;border-radius:999px;margin-left:auto}
+.pc{background:var(--info-soft);color:var(--info)} .nb{background:var(--ok-soft);color:var(--ok)}
+ol,ul{margin:.3rem 0 .6rem;padding-left:1.3rem} li{margin:.25rem 0}
+code,kbd{font-family:Consolas,"D2Coding",monospace;background:var(--surface-2);border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:.92em}
+.note{border-left:4px solid var(--info);background:var(--info-soft);padding:9px 13px;border-radius:0 10px 10px 0;margin:10px 0;font-size:.93rem}
+.caution{border-left:4px solid var(--accent);background:var(--accent-soft);padding:9px 13px;border-radius:0 10px 10px 0;margin:10px 0;font-size:.93rem}
+table{width:100%;border-collapse:collapse;font-size:.92rem} th,td{border-bottom:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+th{background:var(--surface-2)}
+.tbl{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>노트북 설치 안내</h1>
+<p class="lead">작업 PC의 평가문항 자동 출제 도구를 노트북으로 옮겨, 담당자 앞에서 실제 출제까지 시연하기 위한 순서입니다. 처음 한 번은 30분 정도 걸립니다.</p>
+
+<section>
+  <h2><span class="n">1</span>작업 PC에서 데이터 묶기 <span class="where pc">작업 PC</span></h2>
+  <ol>
+    <li>프로그램 폴더에서 <code>데이터_내보내기.bat</code>을 두 번 클릭합니다.</li>
+    <li>바탕화면에 <code>출제도구_이전데이터_날짜.zip</code>이 생깁니다. 원고와 출제 결과(프로젝트)가 들어 있습니다.</li>
+    <li>이 ZIP을 <b>USB</b>로 노트북에 옮깁니다.</li>
+  </ol>
+  <div class="caution">ZIP에는 납품 원고가 들어 있습니다. 메일·외부 공유 드라이브·GitHub에 올리지 마세요.</div>
+</section>
+
+<section>
+  <h2><span class="n">2</span>프로그램 받기 <span class="where nb">노트북</span></h2>
+  <ol>
+    <li>GitHub 저장소 <code>crmubicoq/exam-generator</code>에서 <b>Code → Download ZIP</b>으로 받거나, Git이 있으면 <code>git clone</code>으로 받습니다.</li>
+    <li>압축을 <code>D:\ExamGenerator</code>처럼 <b>짧고 단순한 경로</b>에 풉니다. 바탕화면이나 OneDrive 폴더는 피합니다.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Python 설치 <span class="where nb">노트북</span></h2>
+  <ol>
+    <li><a href="https://www.python.org/downloads/">python.org</a>에서 <b>Python 3.12</b>를 내려받아 설치합니다.</li>
+    <li>설치 첫 화면 아래의 <b>"Add python.exe to PATH"</b>에 꼭 체크합니다.</li>
+  </ol>
+  <div class="note">이미 Python 3.10 이상이 있으면 건너뜁니다. 설치 프로그램이 다음 단계에서 자동으로 확인합니다.</div>
+</section>
+
+<section>
+  <h2><span class="n">4</span>도구 설치 <span class="where nb">노트북</span></h2>
+  <ol>
+    <li>프로그램 폴더의 <code>setup.bat</code>을 두 번 클릭합니다. 인터넷이 필요하고 처음에는 몇 분 걸립니다.</li>
+    <li>마지막에 <b>설치 점검</b> 결과가 나옵니다. <code>[ 필요 ]</code> 항목이 있으면 안내대로 처리한 뒤 다시 실행합니다.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">5</span>데이터 가져오기 <span class="where nb">노트북</span></h2>
+  <ol>
+    <li>1단계에서 만든 ZIP을 노트북 <b>바탕화면</b>이나 프로그램 폴더에 둡니다.</li>
+    <li><code>데이터_가져오기.bat</code>을 두 번 클릭합니다. 가장 최근 ZIP을 찾아 원고와 프로젝트를 제자리에 풉니다.</li>
+    <li>노트북에 이미 데이터가 있으면 지우지 않고 <code>projects_이전백업_날짜</code> 폴더로 옮겨 둡니다.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">6</span>Claude 로그인 (실제 출제 시연용) <span class="where nb">노트북</span></h2>
+  <ol>
+    <li><code>Claude_로그인.bat</code>을 두 번 클릭합니다.</li>
+    <li>열린 화면에서 <code>/login</code>을 입력하고 Enter → 브라우저에서 <b>작업 PC와 같은 Claude 계정</b>으로 로그인·승인합니다.</li>
+    <li>로그인되면 <code>/exit</code>로 닫습니다. 자동으로 Claude를 한 번 호출해 로그인을 확인합니다.</li>
+  </ol>
+  <div class="note">이미 만든 결과만 보여 줄 때는 로그인이 필요 없습니다. Claude Code를 따로 설치하지 않아도 됩니다(도구 안에 포함).</div>
+</section>
+
+<section>
+  <h2><span class="n">7</span>실행 <span class="where nb">노트북</span></h2>
+  <ol>
+    <li><code>run.bat</code>을 두 번 클릭하면 브라우저에 대시보드가 열립니다(<code>http://localhost:8620</code>).</li>
+    <li>까만 실행 창은 <b>닫지 말고</b> 둡니다. 창을 닫으면 프로그램이 종료됩니다.</li>
+    <li>사이드바에서 시연할 프로젝트를 고릅니다. 마지막에 작업한 프로젝트가 자동으로 선택됩니다.</li>
+  </ol>
+</section>
+
+<section>
+  <h2><span class="n">8</span>시연 전 확인 목록</h2>
+  <div class="tbl"><table>
+    <tr><th>확인</th><th>방법</th></tr>
+    <tr><td>원고·프로젝트가 보이는가</td><td>사이드바 프로젝트 목록, 홈 화면 문항 수</td></tr>
+    <tr><td>검수 화면에서 원고 근거가 보이는가</td><td>검수 → '원고 근거' 탭에 하이라이트</td></tr>
+    <tr><td>엑셀·근거PDF가 만들어지는가</td><td>출력 → 세 가지 만들기 버튼</td></tr>
+    <tr><td>Claude 출제가 되는가</td><td>사이드바 LLM 설정 → '연결·로그인 확인'. 시연 전날 5문항 정도 시험 출제</td></tr>
+    <tr><td>인터넷</td><td>회의실 와이파이가 불안정하면 휴대폰 핫스팟 준비</td></tr>
+  </table></div>
+  <div class="note">시연 당일에는 큰 출제를 미리 돌리지 마세요. 구독 사용 한도에 걸리면 출제가 잠시 멈춥니다. 현장 시연은 5~10문항(2~3분)을 권합니다.</div>
+</section>
+
+<section>
+  <h2><span class="n">?</span>문제가 생기면</h2>
+  <div class="tbl"><table>
+    <tr><th>증상</th><th>해결</th></tr>
+    <tr><td>setup.bat에서 "Python이 설치되어 있지 않습니다"</td><td>3단계대로 설치하고 PATH 체크. 설치 후 setup.bat 다시 실행</td></tr>
+    <tr><td>패키지 설치 실패</td><td>인터넷·사내 프록시 확인 후 setup.bat 다시 실행</td></tr>
+    <tr><td>run.bat 실행 후 브라우저가 안 열림</td><td>브라우저에서 <code>http://localhost:8620</code> 직접 입력</td></tr>
+    <tr><td>"이미 실행 중입니다"</td><td>다른 실행 창이 열려 있음. 그 창을 쓰거나 닫고 다시 실행</td></tr>
+    <tr><td>출제가 시작되지 않음 / Claude 호출 실패</td><td>Claude_로그인.bat 다시 실행. 사이드바 LLM 설정에서 공급자가 'Claude 구독 로그인'인지 확인</td></tr>
+    <tr><td>HWP 원고 변환 실패</td><td>한글에서 '인쇄 → Haansoft PDF'(한글 2007) 또는 'PDF로 저장'으로 PDF를 만들어 올림</td></tr>
+  </table></div>
+</section>
+</div>
+</body>
+</html>

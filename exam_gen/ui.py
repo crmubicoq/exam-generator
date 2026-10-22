@@ -9,7 +9,7 @@ import streamlit as st
 
 from .llm import settings as llm_settings
 from .llm.client import LLMClient, login_status
-from .store import Project, list_projects
+from .store import Project, last_project, list_projects, set_last_project
 
 STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
 TYPE_KO = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
@@ -41,7 +41,7 @@ def bar_chart(df, x: str, cols: list[str], stack: bool = True, height: int = 220
     )
     if not stack:
         enc["xOffset"] = alt.XOffset("구분:N", sort=cols)
-    st.altair_chart(alt.Chart(long).mark_bar().encode(**enc).properties(height=height), use_container_width=True)
+    st.altair_chart(alt.Chart(long).mark_bar().encode(**enc).properties(height=height), width="stretch")
 
 
 def current_project() -> Project | None:
@@ -62,17 +62,34 @@ def render_sidebar():
     with st.sidebar:
         st.markdown("#### :material/folder_open: 프로젝트")
         projects = list_projects()
-        cur = st.session_state.get("project")
         if projects:
-            idx = projects.index(cur) if cur in projects else 0
-            sel = st.selectbox("과정(원고) 선택", projects, index=idx, label_visibility="collapsed")
-            st.session_state["project"] = sel
+            # 이름이 길어 목록에서 잘리므로 선택한 프로젝트의 전체 이름을 아래에 따로 보여 준다
+            names = {s: Project(s).meta.get("name", s) for s in projects}
+            projects.sort(key=lambda s: names[s])
+            # 마지막 작업 프로젝트를 파일로 기억한다: 새로고침·재시작에도 유지.
+            # 열려 있는 화면은 CLI에서 바꾼 경우에만 따라간다(다른 사용자의 선택에 화면이 바뀌지 않게)
+            state = last_project()
+            saved = state.get("project")
+            ss = st.session_state
+            if ss.get("project_select") not in projects:  # 처음 열었을 때
+                ss["project_select"] = saved if saved in projects else (
+                    ss.get("project") if ss.get("project") in projects else projects[0])
+            elif state.get("by") == "cli" and saved in projects and state.get("at") != ss.get("_cli_seen"):
+                ss["project_select"] = saved
+            ss["_cli_seen"] = state.get("at")
+            sel = st.selectbox("과정(원고) 선택", projects, key="project_select", format_func=lambda s: names[s],
+                               label_visibility="collapsed")
+            if sel != saved:
+                set_last_project(sel)
+            ss["project"] = sel
+            st.caption(f"선택한 프로젝트: **{names[sel]}** · 문항 {len(Project(sel).items())}개")
         with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
             name = st.text_input("과정명", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
             if st.button("만들기", disabled=not name):
                 try:
                     p = Project.create(name)
                     st.session_state["project"] = p.slug
+                    set_last_project(p.slug)
                     st.rerun()
                 except FileExistsError as e:
                     st.error(str(e))

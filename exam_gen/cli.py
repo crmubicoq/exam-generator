@@ -17,7 +17,7 @@ from .llm import settings as llm_settings
 from .output import evidence_pdf, excel
 from .plan.coverage import allocate
 from .plan.slots import build_slots
-from .store import Project
+from .store import Project, set_last_project
 
 
 def main(argv=None):
@@ -47,8 +47,10 @@ def main(argv=None):
             p.set_page_map(s["id"], off, s["page_map"]["mode"], True)
             print(f"{f}: {s['pages']}쪽, PDF 1쪽 = 책 {off}쪽")
         print("프로젝트:", p.slug)
+        set_last_project(p.slug, by="cli")
     elif args.cmd == "run":
         p = Project(args.project)
+        set_last_project(p.slug, by="cli")  # 대시보드가 이 프로젝트를 열어 진행 상황을 보여 준다
         s = llm_settings.load()
         if args.provider:  # 생성·G4·G5 모두 이 공급자로
             s.provider, s.provider_solve, s.provider_review = args.provider, "", ""

@@ -22,5 +22,11 @@ echo  대시보드를 시작합니다. 잠시 뒤 브라우저가 열립니다.
 echo  주소: http://localhost:8620
 echo  사용을 마치면 이 창을 닫으세요.
 echo.
+rem 처음 실행할 때 Streamlit이 이메일을 묻지 않도록 빈 등록 정보를 만들어 둔다
+if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
+  if not exist "%USERPROFILE%\.streamlit" mkdir "%USERPROFILE%\.streamlit"
+  > "%USERPROFILE%\.streamlit\credentials.toml" echo [general]
+  >> "%USERPROFILE%\.streamlit\credentials.toml" echo email = ""
+)
 ".venv\Scripts\python.exe" -m streamlit run app.py --server.port 8620 --browser.gatherUsageStats false
 pause

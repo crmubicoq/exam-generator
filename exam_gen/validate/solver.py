@@ -30,6 +30,9 @@ def present(item: dict, idx: str, with_key: bool = False) -> str:
                                                      if item.get("short_variants") else ""))
         lines.append(f"해설: {item.get('explanation', '')}")
         lines.append(f"표시 난이도: {item.get('difficulty')}")
+        from .schema import false_targets
+        ft = false_targets(item)
+        lines.append("함정 판정 대상(traps): " + (", ".join(ft) if ft else "없음"))
         for ev in item.get("evidence") or []:
             if ev.get("quote"):
                 lines.append(f"  근거[{ev.get('target')}] {'참' if ev.get('is_true') else '바꾼 원문'}: \"{ev['quote']}\""

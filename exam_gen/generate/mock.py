@@ -157,7 +157,8 @@ def _solve(ctx: dict) -> dict:
 
 
 def _review(ctx: dict) -> dict:
-    from ..validate.schema import REVIEW_CHECKS
+    from ..validate.schema import REVIEW_CHECKS, false_targets
     return {"results": [{"id": str(i), "checks": [{"id": c, "result": "pass", "note": ""} for c in REVIEW_CHECKS],
+                         "traps": [{"target": t, "verdict": "contradiction", "conflict": "데모"} for t in false_targets(it)],
                          "assessed_difficulty": it["difficulty"], "accept_variants": [], "suggestion": ""}
                         for i, it in zip(ctx.get("ids") or range(1, len(ctx["items"]) + 1), ctx["items"])]}

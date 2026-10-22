@@ -53,6 +53,9 @@ def autofix(item: dict):
         if m:
             word = m.group(1)
             item["stem"] = item["stem"][:m.start()] + word + _topic_particle(word) + "?"
+    if item.get("type") == "short" and len(_BLANK.findall(item["stem"])) >= 2 and "공통" not in item["stem"]:
+        # 같은 답이 들어가는 괄호가 둘 이상이면 '공통으로'를 밝힌다(실제 원고 시험 K00022)
+        item["stem"] = re.sub(r"괄호\s*안에\s*들어갈", "괄호 안에 공통으로 들어갈", item["stem"], count=1)
 
 
 def check(item: dict) -> tuple[list[str], list[str]]:
@@ -85,6 +88,8 @@ def check(item: dict) -> tuple[list[str], list[str]]:
         stem = item.get("stem", "")
         if not _BLANK.search(stem):
             fails.append("G3: 단답형 괄호 빈칸 '(     )' 형식이 없음")
+        if len(_BLANK.findall(stem)) >= 2 and "공통" not in stem:
+            fails.append("G3: 단답형 괄호가 둘 이상인데 '공통으로' 표시가 없음")
         for m in _BLANK.finditer(stem):
             # 빈칸 뒤 공백을 건너뛰고 조사로 시작하면 힌트가 된다. '(은)는'처럼 괄호 형식이면 허용 (Codex C16)
             if _PARTICLE.match(stem, m.end()):
@@ -141,11 +146,20 @@ def check(item: dict) -> tuple[list[str], list[str]]:
         ans = item.get("answer", "")
         if len(re.sub(r"\s", "", ans)) > 10 or len(ans.split()) > 3:
             warns.append("G3: 단답형 정답이 단어 수준보다 김")
+        # 정답어가 빈칸 밖 지문에 그대로 나오면 옮겨 쓰기만 해도 맞힌다 (Codex 실제 원고 검수 K00017 '출처')
+        visible = re.sub(r"\s", "", _BLANK.sub("", item.get("stem", "")))
+        for a in [ans, *(item.get("short_variants") or [])]:
+            a = re.sub(r"\s", "", a or "")
+            if len(a) >= 2 and a in visible:
+                fails.append(f"G3: 단답형 정답어 '{a}'가 빈칸 밖 지문에 그대로 나옴 — 옮겨 쓰기만 해도 정답")
+                break
 
     if len(item.get("explanation", "")) < 15:
         warns.append("G3: 해설이 너무 짧음")
 
     fails += _modality(item)
+    from . import freshness
+    warns += freshness.warnings(item)
     return fails, warns
 
 

@@ -35,7 +35,7 @@ _FORMAT_PREFIXES = ("G3:",)
 _ACCURACY_TAGS = ("G5[정답]",)
 _DISPUTE_TAGS = ("G5[이의 제기 여지]",)
 # 등급에 넣지 않는 참고 범주: 정답 선택에 영향이 없는 보기 다듬기 제안(Codex 문항 검수 2026-10-21)
-EXTRA_CATS = {"polish": "보기 다듬기(참고)"}
+EXTRA_CATS = {"polish": "보기 다듬기(참고)", "freshness": "시의성 확인(참고)"}
 
 
 def actual_difficulty(it: dict) -> str:
@@ -59,8 +59,11 @@ def _issues(it: dict) -> dict[str, list[str]]:
     def add(cat, msg):
         out.setdefault(cat, []).append(msg)
 
+    from .validate.freshness import PREFIX as _FRESH
     for w in warns:
-        if w.startswith(_ACCURACY_TAGS):
+        if w.startswith(_FRESH):
+            add("freshness", w)
+        elif w.startswith(_ACCURACY_TAGS):
             add("accuracy", w)
         elif w.startswith(_DISPUTE_TAGS):
             add("dispute", w)
@@ -124,6 +127,9 @@ def analyze(p: Project, batch: int | None = None) -> dict:
                    "verified": sum(1 for it in ok if integrity.is_verified(it))},
         "values": values, "grades": grades,
         "difficulty": {"target": {lv: target.get(lv, 0) for lv in LEVELS}, "final": {lv: final.get(lv, 0) for lv in LEVELS},
+                       # 재분류는 목표 달성이 아니다 — 목표보다 모자란 난이도를 따로 보여 준다(Codex 검수)
+                       "shortfall": {lv: target.get(lv, 0) - final.get(lv, 0) for lv in LEVELS
+                                     if target.get(lv, 0) > final.get(lv, 0)},
                        "target_pct": opts.get("difficulty_pct", {})},
         "types": {t: sum(1 for it in ok if it["type"] == t) for t in criteria()["type_order"]},
         "answer_pos": {k: sum(1 for it in mcq if str(it["answer"]) == k) for k in "1234"},
@@ -145,7 +151,8 @@ def main(argv=None):
         print(f"\n== {r['project']}  ({r['counts']})")
         for k, (name, desc, _) in GRADE_RULES.items():
             print(f"  {name:10} {r['grades'][k]}  {r['values'][k]:.0%}  — {desc}")
-        print("  난이도 목표", r["difficulty"]["target"], "/ 실제", r["difficulty"]["final"])
+        print("  난이도 목표", r["difficulty"]["target"], "/ 실제", r["difficulty"]["final"],
+              "/ 부족", r["difficulty"]["shortfall"] or "없음")
         print("  0문항 페이지", r["coverage"]["zero"], "· 문제 문항", len(r["issues"]))
 
 

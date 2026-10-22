@@ -69,6 +69,10 @@ with c1:
                         "실제(%)": round(d["final"][lv] * 100 / f_tot, 1)} for lv in LEVELS])
     st.markdown("**난이도** — 실제는 검수(G5)가 '원고를 덮은 학습자' 기준으로 판정한 난이도")
     ui.bar_chart(df, "난이도", ["목표(%)", "실제(%)"], stack=False, height=230)
+    if d.get("shortfall"):
+        st.warning("목표보다 모자란 난이도: " + " · ".join(f"**{lv} {n}문항**" for lv, n in d["shortfall"].items())
+                   + " — 낮게 재분류된 문항은 목표를 채운 것이 아닙니다. 해당 난이도를 추가 출제하거나 담당자와 목표를 조정하세요.",
+                   icon=":material/trending_down:")
 with c2:
     n = cnt["accepted"]
     t = r["types"]
@@ -117,3 +121,5 @@ with st.expander("등급 기준과 계산 방법", icon=":material/info:"):
                           for name, desc, c in GRADE_RULES.values()))
     st.caption("자동 검증(G1~G6)을 통과한 문항만 집계한다. 등급은 사람 검수를 대신하지 않으며, 무엇을 먼저 볼지 정하는 데 쓴다.")
     st.caption("'보기 다듬기(참고)'는 정답을 고르는 데 영향이 없는 검수 AI의 보기 수정 제안으로, 등급에 넣지 않는다.")
+    st.caption("'시의성 확인(참고)'은 기관명·법령·금액 기준·전화번호·날짜처럼 원고 발행 뒤 바뀔 수 있는 정보가 든 문항이다. "
+               "외부 확인은 하지 않으며, 정답이 그 정보에 달린 문항은 담당자·원고 집필자와 최신 여부를 확인한다.")

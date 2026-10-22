@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..llm.prompts import render
-from .schema import REVIEW_BLOCKING, REVIEW_CHECKS, REVIEW_SCHEMA
+from .schema import REVIEW_BLOCKING, REVIEW_CHECKS, REVIEW_SCHEMA, TRAP_VERDICTS, false_targets
 from .solver import ask_until_complete, excerpt, present
 
 LEVELS = ["최상", "상", "중", "하"]
@@ -50,6 +50,7 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
                     fails.append(msg)
                 elif c["result"] in ("fail", "warn"):
                     warns.append(msg)
+            fails += _trap_fails(items[ids.index(i)], r.get("traps"))
             want, got_lv = items[ids.index(i)].get("difficulty"), r.get("assessed_difficulty")
             if got_lv not in LEVELS:
                 fails.append("G5: 실제 난이도 판정 누락")
@@ -63,6 +64,25 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
                 warns.append(f"G5 수정안: {r['suggestion'][:300]}")
         verdicts[i] = (fails, warns, r)
     return verdicts
+
+
+def _norm_target(t) -> str:
+    t = str(t or "").strip().strip("[]().")
+    return {"①": "1", "②": "2", "③": "3", "④": "4", "O/X": "OX", "ox": "OX"}.get(t, t)
+
+
+def _trap_fails(item: dict, traps) -> list[str]:
+    """거짓이어야 할 대상마다 '원고와 모순'으로 판정됐는지 확인한다. 판정 누락·모순 아님은 탈락."""
+    got = {_norm_target(t.get("target")): t for t in traps or [] if isinstance(t, dict)}
+    out = []
+    for tgt in false_targets(item):
+        t = got.get(tgt)
+        if t is None:
+            out.append(f"G5[함정] '{tgt}' 판정 누락 — 거짓 보기가 원고와 모순되는지 확인되지 않음")
+        elif t.get("verdict") != "contradiction":
+            out.append(f"G5[함정] '{tgt}' {TRAP_VERDICTS.get(t.get('verdict'), t.get('verdict'))} — 거짓이 입증되지 않음: "
+                       f"{(t.get('conflict') or '')[:200]}")
+    return out
 
 
 def relabel_difficulty(item: dict) -> None:

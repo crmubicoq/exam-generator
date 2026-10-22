@@ -46,12 +46,21 @@ REVIEW_CHECKS = ["answer", "explanation", "choices", "language", "dispute", "com
                  "importance", "difficulty", "fairness"]
 REVIEW_BLOCKING = {"answer", "dispute", "choices"}  # fail이면 탈락(보기: 상식만으로 정답이 보이는 경우), 나머지 fail은 사람 확인(경고)
 
+# 함정 판정: 거짓 보기·진술·X 지문이 원고 문장과 '동시에 성립할 수 없는지'를 따로 판정한다.
+# contradiction(모순)이 아니면 정답의 거짓이 입증되지 않으므로 탈락 (Codex 실제 원고 검수 K00011·K00006, 2026-10-22)
+TRAP_VERDICTS = {"contradiction": "원고와 모순", "compatible": "원고와 동시에 성립 가능",
+                 "not_stated": "원고에 없을 뿐 모순은 아님", "condition_missing": "거짓이 되려면 조건이 더 필요"}
+
 REVIEW_SCHEMA = {
     "type": "object", "required": ["results"],
     "properties": {"results": {"type": "array", "items": {
-        "type": "object", "required": ["id", "checks", "assessed_difficulty", "accept_variants", "suggestion"],
+        "type": "object", "required": ["id", "checks", "traps", "assessed_difficulty", "accept_variants", "suggestion"],
         "properties": {
             "id": _STR,
+            "traps": {"type": "array", "items": {"type": "object", "required": ["target", "verdict", "conflict"],
+                                                 "properties": {"target": _STR,
+                                                                "verdict": {"type": "string", "enum": list(TRAP_VERDICTS)},
+                                                                "conflict": _STR}}},
             "accept_variants": {"type": "array", "items": _STR},
             "assessed_difficulty": {"type": "string", "enum": ["최상", "상", "중", "하"]},
             "checks": {"type": "array", "items": {"type": "object", "required": ["id", "result", "note"],
@@ -62,6 +71,17 @@ REVIEW_SCHEMA = {
 }
 
 LABELS = ["ㄱ", "ㄴ", "ㄷ", "ㄹ"]
+
+
+def false_targets(item: dict) -> list[str]:
+    """함정 판정 대상: 선다형 거짓 보기 번호, 조합형 거짓 진술 라벨, 정답 X인 진위형('OX'). 단답형은 없음."""
+    if item.get("statements"):
+        return [s["label"] for s in item["statements"] if not s.get("is_true")]
+    if item.get("type") == "mcq":
+        return [str(i) for i, c in enumerate(item.get("choices") or [], 1) if not c.get("is_true")]
+    if item.get("type") == "ox" and item.get("answer") == "X":
+        return ["OX"]
+    return []
 
 
 def check_structure(item: dict, slot: dict) -> list[str]:

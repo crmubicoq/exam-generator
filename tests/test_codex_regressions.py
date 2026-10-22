@@ -300,3 +300,56 @@ def test_llm_recheck_relabels_difficulty_like_generation():
     review_llm.relabel_difficulty(item)
     assert item["difficulty"] == "상" and item["difficulty_target"] == "최상"
     assert item["validation"]["warnings"] == ["난이도 재분류: 목표 '최상' → 실제 '상'"]
+
+
+# ---------- 실제 원고 시험 출제(2026-10-22) ----------
+def test_short_answer_with_two_blanks_requires_common():
+    item = {"type": "short", "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [기준을 엄격하게 하면 (     )(이)가 줄고, "
+            "(     )(은)는 오수락으로 이어진다.]", "answer": "오정합", "explanation": "정답은 오정합이다.",
+            "evidence": [], "choices": [], "statements": []}
+    assert any("공통" in f for f in rules.check(item)[0])
+    rules.autofix(item)
+    assert "공통으로 들어갈" in item["stem"] and not any("공통" in f for f in rules.check(item)[0])
+
+
+# ---------- Codex 실제 원고 검수(2026-10-22) ----------
+def _mcq_negative():
+    return {"type": "mcq", "difficulty": "중", "answer": "1", "stem": "위험지도에 관한 설명으로 옳지 않은 것은?",
+            "choices": [{"text": "취약요인을 중심으로 표시한다.", "is_true": False}] +
+                       [{"text": f"참 보기 {i}", "is_true": True} for i in range(3)], "statements": []}
+
+
+def test_trap_must_contradict_manuscript():
+    from exam_gen.validate.review_llm import _trap_fails
+    item = _mcq_negative()
+    assert any("판정 누락" in f for f in _trap_fails(item, []))
+    # 시험2 K00011: '함께 표시' ↔ '중심으로 표시'는 동시에 성립 → 탈락
+    assert any("동시에 성립" in f for f in _trap_fails(item, [{"target": "1", "verdict": "compatible", "conflict": "x"}]))
+    assert _trap_fails(item, [{"target": "①", "verdict": "contradiction", "conflict": "x"}]) == []
+    assert schema.false_targets({"type": "ox", "answer": "O"}) == []
+    assert schema.false_targets({"type": "ox", "answer": "X"}) == ["OX"]
+
+
+def test_allocation_follows_chasi_share_when_items_fewer_than_pages():
+    # 3차시 페이지가 글자 수가 많아도 30문항이 3차시에 쏠리지 않아야 한다
+    pages = [{"g": g, "chasi": 1 if g < 50 else 2, "chars": 500 if g < 50 else 2000, "excluded": False} for g in range(100)]
+    a = allocate(pages, 30)
+    per = {c: sum(v for g, v in a.items() if pages[g]["chasi"] == c) for c in (1, 2)}
+    assert sum(a.values()) == 30 and per == {1: 6, 2: 24}
+    first = sorted(g for g in a if pages[g]["chasi"] == 1)
+    assert first[0] < 10 and first[-1] > 40  # 차시 안에서 앞뒤로 고르게
+
+
+def test_short_answer_exposed_in_stem_fails():
+    item = {"type": "short", "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [기록을 확인해 출처를 알아내는 접근을 (     ) 방식이라고 부른다.]",
+            "answer": "출처", "explanation": "정답은 출처이다.", "evidence": [], "choices": [], "statements": []}
+    assert any("빈칸 밖" in f for f in rules.check(item)[0])
+
+
+def test_freshness_flags_volatile_facts_on_answer():
+    from exam_gen.validate import freshness
+    item = {"type": "ox", "answer": "X", "stem": "통신사기피해환급법상 소액 기준인 1만원 이하는 피해 총액 기준이다.",
+            "choices": [], "statements": []}
+    w = freshness.warnings(item)
+    assert w and "정답 관련" in w[0] and "1만원 이하" in w[0]
+    assert freshness.warnings({"type": "ox", "answer": "O", "stem": "직원은 확인 경로를 안내한다.", "choices": []}) == []

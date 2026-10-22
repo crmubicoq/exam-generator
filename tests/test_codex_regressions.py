@@ -390,3 +390,13 @@ def test_short_answer_must_be_concept_term(sample_project):
     assert any("단답 용어" in x for x in f)
     f, _, _ = review_llm.review(Fake("concept"), MOCK, sample_project, [item])["1"]
     assert f == []
+
+
+def test_short_variants_drop_josa_only_duplicates():
+    item = {"type": "short", "answer": "사후 리뷰",
+            "short_variants": ["after-action review", "After Action Review", "사후리뷰를", "사후 리뷰", "AAR", "AAR"]}
+    rules.clean_variants(item)
+    assert item["short_variants"] == ["after-action review", "AAR"]
+    item = {"type": "short", "answer": "보장 리모델링", "short_variants": [],
+            "validation": {"G5": {"accept_variants": ["보장리모델링을", "보험 리모델링"]}, "warnings": []}}
+    assert review_llm.merge_variants(item) == ["보험 리모델링"]

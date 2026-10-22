@@ -41,7 +41,31 @@ def _texts(item: dict) -> list[tuple[str, str]]:
     return out
 
 
+_TRAIL_JOSA = re.compile(r"(?:으로|로|을|를|이|가|은|는|의|와|과|에)$")
+
+
+def _variant_key(v: str) -> str:
+    """허용 답안 비교용: 공백·끝 조사를 뺀 형태. 채점은 띄어쓰기를 무시하므로 이것만 다른 표현은 중복이다."""
+    k = re.sub(r"[\s\-_]", "", v or "").lower()
+    return _TRAIL_JOSA.sub("", k) if len(k) > 2 else k
+
+
+def clean_variants(item: dict) -> None:
+    """단답형 허용 답안에서 정답과 띄어쓰기·끝 조사만 다른 표현(예: '사후리뷰를')과 중복을 뺀다."""
+    if item.get("type") != "short":
+        return
+    seen = {_variant_key(item.get("answer", ""))}
+    out = []
+    for v in item.get("short_variants") or []:
+        k = _variant_key(v)
+        if v and v.strip() and k not in seen:
+            seen.add(k)
+            out.append(v.strip())
+    item["short_variants"] = out
+
+
 def autofix(item: dict):
+    clean_variants(item)
     for c in item.get("choices") or []:
         c["text"] = _PREFIX.sub("", c.get("text", "")).strip()
     for s in item.get("statements") or []:

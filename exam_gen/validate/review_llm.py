@@ -105,12 +105,16 @@ def merge_variants(item: dict) -> list[str]:
     if item.get("type") != "short":
         return []
     from ..ingest.pdf_text import normalize
+    from .rules import _variant_key
     cand = [v.strip() for v in (item["validation"].get("G5") or {}).get("accept_variants") or [] if v and v.strip()]
     have = {normalize(x) for x in [item.get("answer", ""), *(item.get("short_variants") or [])]}
+    keys = {_variant_key(x) for x in [item.get("answer", ""), *(item.get("short_variants") or [])]}
     new = []
     for v in cand:
-        if len(v) <= 30 and normalize(v) and normalize(v) not in have:
+        # 정답과 띄어쓰기·끝 조사만 다른 표현('사후리뷰를')은 채점상 같은 답이므로 넣지 않는다
+        if len(v) <= 30 and normalize(v) and normalize(v) not in have and _variant_key(v) not in keys:
             have.add(normalize(v))
+            keys.add(_variant_key(v))
             new.append(v)
     if new:
         item["short_variants"] = list(item.get("short_variants") or []) + new

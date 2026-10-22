@@ -353,3 +353,19 @@ def test_freshness_flags_volatile_facts_on_answer():
     w = freshness.warnings(item)
     assert w and "정답 관련" in w[0] and "1만원 이하" in w[0]
     assert freshness.warnings({"type": "ox", "answer": "O", "stem": "직원은 확인 경로를 안내한다.", "choices": []}) == []
+
+
+def test_pool_review_flags_same_principle_items(sample_project):
+    from exam_gen.validate import pool_review
+    p = sample_project
+    base = {"type": "ox", "difficulty": "하", "answer": "O", "stem": "x", "explanation": "", "evidence": [],
+            "status": "warn", "chasi": 1, "page": 0, "batch": 1, "slot": {"sid": "S1"}, "validation": {"warnings": []}}
+    for i, kp in enumerate(["독립 확인 경로를 써야 한다 A", "독립 확인 경로를 써야 한다 B", "FDS는 목적을 모른다"]):
+        p.save_item({**copy.deepcopy(base), "key": f"K9000{i}", "key_point": kp})
+    r = pool_review.run(p, MOCK)
+    assert len(r["groups"]) == 1 and set(r["groups"][0]["keys"]) == {"K90000", "K90001"}
+    w = p.item("K90000")["validation"]["warnings"]
+    assert any(x.startswith(pool_review.PREFIX) and "K90001" in x for x in w)
+    assert not any(x.startswith(pool_review.PREFIX) for x in p.item("K90002")["validation"]["warnings"])
+    pool_review.run(p, MOCK)  # 다시 점검해도 경고가 중복되지 않는다
+    assert sum(x.startswith(pool_review.PREFIX) for x in p.item("K90000")["validation"]["warnings"]) == 1

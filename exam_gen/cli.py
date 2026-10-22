@@ -4,6 +4,7 @@
   python -m exam_gen.cli run  <프로젝트> --total 30 [--pages 0,1] [--provider mock]
   python -m exam_gen.cli export <프로젝트> [--draft]
   python -m exam_gen.cli report <프로젝트>
+  python -m exam_gen.cli pool <프로젝트> [--provider ...]   # 최종 풀 점검(같은 원리 반복 묶음)
 """
 from __future__ import annotations
 
@@ -37,6 +38,9 @@ def main(argv=None):
     e.add_argument("--draft", action="store_true")
     rp = sub.add_parser("report")
     rp.add_argument("project")
+    pl = sub.add_parser("pool")
+    pl.add_argument("project")
+    pl.add_argument("--provider")
     args = ap.parse_args(argv)
 
     if args.cmd == "new":
@@ -72,6 +76,16 @@ def main(argv=None):
         for mode in ("extract", "overview"):
             r = evidence_pdf.build(p, items, p.dir / "exports" / f"근거PDF_{mode}.pdf", mode=mode, draft=args.draft)
             print(r["path"], r["items"], "문항", r["pages"], "쪽", "하이라이트 없음:", r["no_highlight"])
+    elif args.cmd == "pool":
+        from .validate import pool_review
+        p = Project(args.project)
+        s = llm_settings.load()
+        if args.provider:
+            s.provider, s.provider_solve, s.provider_review = args.provider, "", ""
+        r = pool_review.run(p, s)
+        print(f"점검 {r.get('items', 0)}문항 · 같은 원리 묶음 {len(r['groups'])}개 · 표시 {r['flagged']}문항")
+        for g in r["groups"]:
+            print(f"  - {g['principle']}: {', '.join(g['keys'])}  ({g['note']})")
     elif args.cmd == "report":
         p = Project(args.project)
         items = p.items()

@@ -35,7 +35,7 @@ _FORMAT_PREFIXES = ("G3:",)
 _ACCURACY_TAGS = ("G5[정답]",)
 _DISPUTE_TAGS = ("G5[이의 제기 여지]",)
 # 등급에 넣지 않는 참고 범주: 정답 선택에 영향이 없는 보기 다듬기 제안(Codex 문항 검수 2026-10-21)
-EXTRA_CATS = {"polish": "보기 다듬기(참고)", "freshness": "시의성 확인(참고)"}
+EXTRA_CATS = {"polish": "보기 다듬기(참고)", "freshness": "시의성 확인(참고)", "repeat": "원리 반복(참고)"}
 
 
 def actual_difficulty(it: dict) -> str:
@@ -60,9 +60,12 @@ def _issues(it: dict) -> dict[str, list[str]]:
         out.setdefault(cat, []).append(msg)
 
     from .validate.freshness import PREFIX as _FRESH
+    from .validate.pool_review import PREFIX as _REPEAT
     for w in warns:
         if w.startswith(_FRESH):
             add("freshness", w)
+        elif w.startswith(_REPEAT):
+            add("repeat", w)
         elif w.startswith(_ACCURACY_TAGS):
             add("accuracy", w)
         elif w.startswith(_DISPUTE_TAGS):

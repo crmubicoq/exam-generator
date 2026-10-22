@@ -42,7 +42,15 @@ def _alter(s: str) -> tuple[str, str] | None:
 
 
 def respond(task: str, ctx: dict) -> dict:
-    return {"generate": _generate, "solve": _solve, "review": _review}[task](ctx)
+    return {"generate": _generate, "solve": _solve, "review": _review, "pool": _pool}[task](ctx)
+
+
+def _pool(ctx: dict) -> dict:
+    """데모: 판단 포인트 앞 12글자가 같은 문항끼리 묶는다."""
+    groups: dict[str, list[str]] = {}
+    for it in ctx["items"]:
+        groups.setdefault((it.get("key_point") or "")[:12], []).append(it["key"])
+    return {"groups": [{"principle": k, "keys": v, "note": "데모"} for k, v in groups.items() if len(v) >= 2 and k]}
 
 
 def _generate(ctx: dict) -> dict:

@@ -90,6 +90,31 @@ with c2:
     ]
     st.dataframe(pd.DataFrame(rows, columns=["항목", "값"]), hide_index=True, width="stretch")
 
+# ---------- 같은 원리 반복 (최종 풀 점검) ----------
+from exam_gen.llm import settings as llm_settings  # noqa: E402
+from exam_gen.validate import pool_review  # noqa: E402
+
+pr = pool_review.last(p)
+with st.container(border=True):
+    st.markdown("#### :material/content_copy: 같은 원리 반복 점검")
+    st.caption("문장이 달라도 같은 판단 원리를 묻는 문항 묶음입니다. 출제가 끝나면 자동으로 점검하며, 문항을 고치거나 지운 뒤에는 다시 점검할 수 있습니다. "
+               "탈락시키지 않고 표시만 합니다 — 묶음마다 하나만 남길지, 묻는 조건을 달리할지 검수자가 정합니다.")
+    c_a, c_b = st.columns([3, 1])
+    if pr:
+        c_a.markdown(f"마지막 점검 {pr['at'][:16].replace('T', ' ')} · {pr['items']}문항 중 **묶음 {len(pr['groups'])}개 · {pr['flagged']}문항**")
+    else:
+        c_a.markdown("아직 점검하지 않았습니다.")
+    if c_b.button("다시 점검", icon=":material/refresh:", width="stretch", help="AI를 한 번 호출합니다(구독 사용량 소량)."):
+        with st.spinner("문항 전체의 판단 원리를 비교하는 중…"):
+            try:
+                pr = pool_review.run(p, llm_settings.load())
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.error(f"점검에 실패했습니다: {e}")
+    for g in (pr or {}).get("groups", []):
+        st.markdown(f"- **{g['principle']}** — {', '.join(g['keys'])}  \n"
+                    f"  <span style='color:#666;font-size:0.9em'>{g['note']}</span>", unsafe_allow_html=True)
+
 # ---------- 문제 문항 ----------
 st.subheader(f":material/report: 문제 문항 {len(r['issues'])}개")
 issue_rows = []

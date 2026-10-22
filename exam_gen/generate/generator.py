@@ -98,6 +98,8 @@ class Pipeline:
                 else:
                     self.prog["status"] = "done"
                     self.prog["message"] = "출제 완료"
+            if self.prog["status"] in ("done", "partial"):
+                self._pool_review()
         except Exception as e:  # noqa: BLE001
             self.prog["status"] = "error"
             self.prog["message"] = f"오류: {e}"
@@ -108,6 +110,16 @@ class Pipeline:
             self.p.set_batch_status(self.batch, self.prog["status"], self.prog)
             self.p.log("batch_end", self.prog, batch=self.batch)
             RUNNING.pop((self.p.slug, self.batch), None)
+
+    def _pool_review(self):
+        """최종 풀 점검(같은 원리 반복 묶음). 실패해도 출제 결과에는 영향을 주지 않는다."""
+        from ..validate import pool_review
+        try:
+            r = pool_review.run(self.p, self.s, self.client)
+            self.prog["pool_review"] = {"groups": len(r["groups"]), "flagged": r["flagged"]}
+        except Exception as e:  # noqa: BLE001
+            self.prog["pool_review"] = {"error": str(e)[:300]}
+            self.p.log("pool_review_error", {"error": repr(e)}, batch=self.batch)
 
     def _process(self, todo: list[dict]):
         by_page: dict[int, list] = {}

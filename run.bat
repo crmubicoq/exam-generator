@@ -3,7 +3,10 @@ chcp 65001 > nul
 cd /d "%~dp0"
 title 평가문항 자동 출제 - 실행 중 (이 창을 닫으면 프로그램이 종료됩니다)
 
-if not exist ".venv\Scripts\python.exe" (
+rem 휴대용 패키지는 python 폴더의 내장 Python을, 개발용 설치는 .venv를 쓴다
+set "PYEXE=python\python.exe"
+if not exist "%PYEXE%" set "PYEXE=.venv\Scripts\python.exe"
+if not exist "%PYEXE%" (
   echo  아직 설치되지 않았습니다. setup.bat 을 먼저 실행하세요.
   pause
   exit /b 1
@@ -28,5 +31,5 @@ if not exist "%USERPROFILE%\.streamlit\credentials.toml" (
   > "%USERPROFILE%\.streamlit\credentials.toml" echo [general]
   >> "%USERPROFILE%\.streamlit\credentials.toml" echo email = ""
 )
-".venv\Scripts\python.exe" -m streamlit run app.py --server.port 8620 --browser.gatherUsageStats false
+"%PYEXE%" -m streamlit run app.py --server.port 8620 --browser.gatherUsageStats false
 pause

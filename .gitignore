@@ -15,3 +15,4 @@ projects/
 *.ppt
 *.pptx
 백업/
+dist/

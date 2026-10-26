@@ -3,12 +3,15 @@ chcp 65001 > nul
 cd /d "%~dp0"
 title Claude 구독 로그인
 
-if not exist ".venv\Scripts\python.exe" (
-  echo  setup.bat 을 먼저 실행하세요.
+rem 휴대용 패키지는 python 폴더의 내장 Python을, 개발용 설치는 .venv를 쓴다
+set "PYEXE=python\python.exe"
+if not exist "%PYEXE%" set "PYEXE=.venv\Scripts\python.exe"
+if not exist "%PYEXE%" (
+  echo  아직 설치되지 않았습니다. setup.bat 을 먼저 실행하세요.
   pause
   exit /b 1
 )
-for /f "delims=" %%i in ('".venv\Scripts\python.exe" -c "from exam_gen.tools.check_env import bundled_claude; print(bundled_claude() or '')"') do set "CLAUDE=%%i"
+for /f "delims=" %%i in ('"%PYEXE%" -c "from exam_gen.tools.check_env import bundled_claude; print(bundled_claude() or '')"') do set "CLAUDE=%%i"
 if "%CLAUDE%"=="" (
   echo  Claude 프로그램을 찾지 못했습니다. setup.bat 을 다시 실행하세요.
   pause
@@ -25,5 +28,5 @@ pause
 "%CLAUDE%"
 echo.
 echo  로그인 확인 중 (Claude를 한 번 호출합니다)...
-".venv\Scripts\python.exe" -m exam_gen.tools.check_env --login
+"%PYEXE%" -m exam_gen.tools.check_env --login
 pause

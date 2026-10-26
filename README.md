@@ -4,6 +4,12 @@
 출력은 **양식 엑셀**과 **근거PDF**(원고 위에 출처를 하이라이트로 표시)다.
 
 ## 실행
+### 휴대용 패키지(실무자 PC — Python 설치 불필요)
+개발 PC에서 `python tools/build_portable.py`로 `dist/출제도구_휴대용_날짜.zip`(약 270MB)을 만든다. Windows 내장용 Python(이 PC와 같은 3.12.x)과 검증된 버전의 패키지(`requirements.lock.txt`)가 미리 들어 있다. 실무자는 **짧은 경로(예: `D:\출제도구`)에 풀고 `run.bat`**만 실행한다(처음 한 번 `Claude_로그인.bat`).
+- 프로그램만 바뀌었을 때: `python tools/build_portable.py --app-only` → `출제도구_프로그램만_날짜.zip`을 설치 폴더에 덮어쓴다(python·projects·백업 폴더 유지).
+- 패키지 버전을 올렸으면 `--lock`으로 고정본을 다시 만든 뒤 빌드한다. 패키지에는 **마지막 커밋 내용만** 들어간다(원고·projects 제외).
+
+### 개발 PC
 ```
 setup.bat              # 처음 한 번: Python 확인 → 가상환경 → 패키지 설치 → 설치 점검표
 run.bat                # 대시보드 실행 http://localhost:8620 (이미 실행 중이면 브라우저만 연다)
@@ -12,7 +18,7 @@ Claude_로그인.bat       # 실제 출제용 Claude 구독 로그인(/login). C
 데이터_가져오기.bat     # ZIP을 이 파일 위로 끌어다 놓으면 가져온다(기존 데이터는 백업 폴더로)
 ```
 - 경로가 길면(Windows 260자 제한) 패키지 설치가 실패한다. `D:\ExamGenerator`처럼 짧은 경로에 둔다.
-- 설치 점검만 다시 하려면 `.venv\Scripts\python.exe -m exam_gen.tools.check_env` (`--login`을 붙이면 Claude 호출로 로그인까지 확인).
+- 설치 점검만 다시 하려면 `.venv\Scripts\python.exe -m exam_gen.tools.check_env`(휴대용은 `python\python.exe -m …`) (`--login`을 붙이면 Claude 호출로 로그인까지 확인).
 - 문서: [사용 안내(담당자용)](docs/평가문항_자동출제_사용안내.html) · [노트북 설치 안내](docs/노트북_설치_안내.html) · 작업 기록 `docs/worklog/` · 할 일 `docs/TODO.md`
 
 LLM은 사이드바 **LLM 설정**에서 고른다. 생성, G4 독립 풀이, G5 검수마다 공급자를 다르게 지정할 수 있다.

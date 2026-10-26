@@ -429,3 +429,26 @@ def test_mcq_positive_ratio_at_most_20pct_including_combo():
 def test_default_provider_is_claude_subscription():
     from exam_gen.llm.settings import LLMSettings
     assert LLMSettings().provider == "claude_agent_sdk"
+
+
+def test_project_naming_rename_delete_restore():
+    from exam_gen import store
+    p = store.Project.create("관리 테스트 과정", "2026 상반기")
+    assert p.meta["name"] == "관리 테스트 과정 · 2026 상반기" and p.meta["course"] == "관리 테스트 과정"
+    with pytest.raises(FileExistsError):
+        store.Project.create("관리 테스트 과정", "2026 상반기")
+    q = store.Project.create("관리 테스트 과정", "2026 하반기")
+    with pytest.raises(FileExistsError):
+        q.rename("관리 테스트 과정", "2026 상반기")
+    q.rename("관리 테스트 과정", "재출제")
+    info = q.info()
+    assert info["name"] == "관리 테스트 과정 · 재출제" and info["items"] == 0 and info["created"]
+    slug = q.slug
+    store.delete_project(slug)
+    assert slug not in store.list_projects()
+    trash = [t for t in store.list_trash() if t["slug"] == slug]
+    assert trash and trash[0]["deleted"]
+    assert store.restore_project(trash[0]["dir"]) == slug and slug in store.list_projects()
+    store.delete_project(slug)
+    store.purge_trash([t for t in store.list_trash() if t["slug"] == slug][0]["dir"])
+    assert not [t for t in store.list_trash() if t["slug"] == slug]

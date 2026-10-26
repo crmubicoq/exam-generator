@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import re
@@ -63,6 +64,78 @@ def list_projects() -> list[str]:
     return sorted(p.name for p in PROJECTS_DIR.iterdir() if (p / "project.json").exists())
 
 
+# ---------- 프로젝트 관리(담당자 협의 2026-10-23) ----------
+TRASH_DIR = PROJECTS_DIR / "_삭제됨"
+
+
+def display_name(name: str, memo: str = "") -> str:
+    """화면에 보이는 프로젝트 이름: '과정명 · 구분 메모'."""
+    name, memo = name.strip(), memo.strip()
+    return f"{name} · {memo}" if memo else name
+
+
+def name_taken(name: str, exclude: str | None = None) -> bool:
+    for s in list_projects():
+        if s != exclude and Project(s).meta.get("name", "").strip() == name.strip():
+            return True
+    return False
+
+
+def delete_project(slug: str) -> Path:
+    """바로 지우지 않고 휴지통(projects/_삭제됨)으로 옮긴다. 반환: 옮긴 위치."""
+    src = PROJECTS_DIR / slug
+    if not (src / "project.json").exists():
+        raise FileNotFoundError(slug)
+    TRASH_DIR.mkdir(parents=True, exist_ok=True)
+    dst = TRASH_DIR / f"{datetime.now():%Y%m%d_%H%M%S}_{slug}"
+    with _LOCK:
+        shutil.move(str(src), str(dst))
+    if last_project().get("project") == slug:
+        try:
+            _UI_STATE.unlink()
+        except OSError:
+            pass
+    return dst
+
+
+def list_trash() -> list[dict]:
+    if not TRASH_DIR.exists():
+        return []
+    out = []
+    for d in sorted(TRASH_DIR.iterdir(), reverse=True):
+        try:
+            meta = json.loads((d / "project.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        out.append({"dir": d.name, "name": meta.get("name", d.name), "slug": meta.get("slug", d.name),
+                    "deleted": datetime.strptime(d.name[:15], "%Y%m%d_%H%M%S").isoformat(timespec="seconds")
+                    if re.match(r"\d{8}_\d{6}_", d.name) else ""})
+    return out
+
+
+def restore_project(trash_dir: str) -> str:
+    """휴지통에서 되살린다. 같은 폴더 이름이 이미 있으면 뒤에 번호를 붙인다. 반환: slug"""
+    src = TRASH_DIR / trash_dir
+    slug = json.loads((src / "project.json").read_text(encoding="utf-8")).get("slug") or trash_dir[16:]
+    dst, n = PROJECTS_DIR / slug, 2
+    while dst.exists():
+        dst, n = PROJECTS_DIR / f"{slug}_{n}", n + 1
+    with _LOCK:
+        shutil.move(str(src), str(dst))
+    if dst.name != slug:
+        m = json.loads((dst / "project.json").read_text(encoding="utf-8"))
+        m["slug"] = dst.name
+        _atomic_write(dst / "project.json", json.dumps(m, ensure_ascii=False, indent=2))
+    return dst.name
+
+
+def purge_trash(trash_dir: str | None = None):
+    """휴지통 비우기(되돌릴 수 없음). trash_dir를 주면 그 프로젝트만."""
+    targets = [TRASH_DIR / trash_dir] if trash_dir else (list(TRASH_DIR.iterdir()) if TRASH_DIR.exists() else [])
+    for d in targets:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 class Project:
     def __init__(self, slug: str):
         self.slug = slug
@@ -73,15 +146,22 @@ class Project:
 
     # ---------- 생성 / 메타 ----------
     @classmethod
-    def create(cls, name: str) -> "Project":
-        slug = slugify(name)
-        d = PROJECTS_DIR / slug
-        if (d / "project.json").exists():
-            raise FileExistsError(f"같은 이름의 프로젝트가 있습니다: {slug}")
+    def create(cls, name: str, memo: str = "") -> "Project":
+        """name: 과정명, memo: 구분 메모(예: '2026 상반기 · 300문항 본출제'). 화면 이름 = '과정명 · 구분 메모'."""
+        shown = display_name(name, memo)
+        if not shown:
+            raise ValueError("과정명을 입력하세요.")
+        if name_taken(shown):
+            raise FileExistsError(f"같은 이름의 프로젝트가 이미 있습니다: {shown} — 구분 메모를 다르게 적어 주세요.")
+        slug = slugify(shown)
+        d, n = PROJECTS_DIR / slug, 2
+        while d.exists():  # 폴더 이름만 겹치면(기호 차이 등) 번호를 붙인다
+            slug = f"{slugify(shown)}_{n}"
+            d, n = PROJECTS_DIR / slug, n + 1
         for sub in ("sources", "pdf", "exports", "runs"):
             (d / sub).mkdir(parents=True, exist_ok=True)
-        meta = {"name": name, "slug": slug, "created": now(), "subject_tag": "", "objectives": "",
-                "sources": [], "options": dict(criteria()["defaults"])}
+        meta = {"name": shown, "course": name.strip(), "memo": memo.strip(), "slug": slug, "created": now(),
+                "subject_tag": "", "objectives": "", "sources": [], "options": dict(criteria()["defaults"])}
         (d / "project.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         return cls(slug)
 
@@ -97,6 +177,48 @@ class Project:
         m = self.meta
         m.update(kw)
         self.save_meta(m)
+
+    def rename(self, name: str, memo: str = ""):
+        shown = display_name(name, memo)
+        if not shown:
+            raise ValueError("과정명을 입력하세요.")
+        if name_taken(shown, exclude=self.slug):
+            raise FileExistsError(f"같은 이름의 프로젝트가 이미 있습니다: {shown}")
+        self.update_meta(name=shown, course=name.strip(), memo=memo.strip())
+        self.log("rename", {"name": shown})
+
+    def info(self) -> dict:
+        """프로젝트 관리 화면용 요약: 생성·마지막 수정, 원고, 문항 수, 배치 이력, 사용 모델."""
+        meta = self.meta
+        items = self.items()
+        status: dict[str, int] = {}
+        models: dict[str, int] = {}
+        last = meta.get("created", "")
+        for it in items:
+            status[it.get("status", "")] = status.get(it.get("status", ""), 0) + 1
+            g = it.get("gen") or {}
+            if g.get("provider"):
+                m = f"{g['provider']}{(' ' + g['model']) if g.get('model') else ''} · 프롬프트 {g.get('prompt_version', '?')}"
+                models[m] = models.get(m, 0) + 1
+            last = max(last, it.get("updated") or "")
+        with self._conn() as c:
+            ev = c.execute("SELECT MAX(ts) FROM events").fetchone()[0]
+        last = max(last, ev or "")
+        batches = []
+        for b in self.batches():
+            s = b.get("summary") or {}
+            u = s.get("usage") or {}
+            try:
+                minutes = round((datetime.fromisoformat(s["updated"]) - datetime.fromisoformat(s["started"])).total_seconds() / 60, 1)
+            except (KeyError, ValueError, TypeError):
+                minutes = None
+            batches.append({"batch": b["batch"], "created": b.get("created", ""), "kind": b.get("kind"),
+                            "slots": len(b.get("slots") or []), "status": b.get("status"),
+                            "providers": ", ".join(u.get("by_provider") or {}) or "-", "calls": u.get("calls"),
+                            "minutes": minutes, "accepted": s.get("accepted"), "manual": s.get("manual")})
+        return {"slug": self.slug, "name": meta.get("name", self.slug), "created": meta.get("created", ""),
+                "updated": last, "sources": [(s.get("filename"), s.get("pages")) for s in meta.get("sources", [])],
+                "pages": len(self.pages), "items": len(items), "status": status, "batches": batches, "models": models}
 
     # ---------- 원고 ----------
     def add_source(self, src_path: Path, filename: str | None = None) -> dict:
@@ -299,10 +421,16 @@ class Project:
         return "|".join(s["sha256"][:12] for s in self.meta["sources"])
 
     # ---------- 문항 DB ----------
-    def _conn(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _conn(self):
+        """연결을 쓰고 나면 반드시 닫는다(sqlite3의 with는 커밋만 하고 닫지 않아 Windows에서 파일이 잠긴 채 남는다)."""
         c = sqlite3.connect(self.dir / "items.sqlite", timeout=30)
         c.row_factory = sqlite3.Row
-        return c
+        try:
+            with c:
+                yield c
+        finally:
+            c.close()
 
     def _init_db(self):
         with _LOCK, self._conn() as c:

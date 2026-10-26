@@ -74,7 +74,7 @@ def render_sidebar():
             if ss.get("project_select") not in projects:  # 처음 열었을 때
                 ss["project_select"] = saved if saved in projects else (
                     ss.get("project") if ss.get("project") in projects else projects[0])
-            elif state.get("by") == "cli" and saved in projects and state.get("at") != ss.get("_cli_seen"):
+            elif state.get("by") in ("cli", "page") and saved in projects and state.get("at") != ss.get("_cli_seen"):
                 ss["project_select"] = saved
             ss["_cli_seen"] = state.get("at")
             sel = st.selectbox("과정(원고) 선택", projects, key="project_select", format_func=lambda s: names[s],
@@ -84,14 +84,16 @@ def render_sidebar():
             ss["project"] = sel
             st.caption(f"선택한 프로젝트: **{names[sel]}** · 문항 {len(Project(sel).items())}개")
         with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
-            name = st.text_input("과정명", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
-            if st.button("만들기", disabled=not name):
+            name = st.text_input("과정명 (필수)", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
+            memo = st.text_input("구분 메모", placeholder="예: 2026 상반기 · 300문항 본출제")
+            st.caption("화면에는 '과정명 · 구분 메모'로 보입니다. 같은 과정을 여러 번 출제할 때 메모로 구분하세요.")
+            if st.button("만들기", disabled=not name.strip()):
                 try:
-                    p = Project.create(name)
+                    p = Project.create(name, memo)
                     st.session_state["project"] = p.slug
                     set_last_project(p.slug)
                     st.rerun()
-                except FileExistsError as e:
+                except (FileExistsError, ValueError) as e:
                     st.error(str(e))
         settings_box()
 

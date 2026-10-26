@@ -9,7 +9,8 @@ from exam_gen import ui
 st.set_page_config(page_title="평가문항 자동 출제", page_icon=":material/quiz:", layout="wide")
 
 PAGES = {
-    "시작": [st.Page("app_pages/home.py", title="홈", icon=":material/home:", default=True)],
+    "시작": [st.Page("app_pages/home.py", title="홈", icon=":material/home:", default=True),
+             st.Page("app_pages/projects.py", title="프로젝트 관리", icon=":material/folder_managed:")],
     "준비": [st.Page("app_pages/register.py", title="원고 등록", icon=":material/upload_file:"),
              st.Page("app_pages/options.py", title="출제 옵션", icon=":material/tune:")],
     "출제": [st.Page("app_pages/progress.py", title="출제 진행", icon=":material/autorenew:")],

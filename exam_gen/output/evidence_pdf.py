@@ -15,7 +15,7 @@ import pymupdf
 
 from ..config import criteria, type_name
 from ..ingest.page_map import format_pages
-from . import numbering
+from . import export_log, numbering
 
 A4 = (595, 842)
 
@@ -280,4 +280,6 @@ def build(project, items_all: list[dict], out_path: Path, *, mode: str = "extrac
     n_pages = len(out)
     out.close()
     src.close()
+    export_log.record(project, mode, out_path, items, scope=scope or ("passed" if draft else "approved"),
+                      batch=batch, chasi=chasi)
     return {"path": str(out_path), "items": len(items), "pages": n_pages, "no_highlight": sorted(set(zero))}

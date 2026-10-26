@@ -6,7 +6,7 @@ from pathlib import Path
 import pymupdf
 
 from ..config import type_name
-from . import numbering
+from . import export_log, numbering
 from .evidence_pdf import A4, _archive, _css, _e
 
 _EXTRA_CSS = (".q{margin:0 0 12pt 0} .no{font-weight:bold} .ch{margin-left:14pt} .ans{color:#b00;margin-left:14pt}"
@@ -63,5 +63,6 @@ def build(project, items_all: list[dict], out_path: Path, *, scope: str = "all",
     with pymupdf.open(out_path) as d:
         n = d.page_count
     doc.close()
+    export_log.record(project, "paper", out_path, items, scope=scope, batch=batch)
     return {"path": str(out_path), "items": len(items), "pages": n,
             "types": {type_name(t): sum(1 for it in items if it["type"] == t) for t in ("mcq", "ox", "short")}}

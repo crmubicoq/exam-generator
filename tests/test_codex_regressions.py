@@ -638,3 +638,50 @@ def test_final_select_backup_and_exam_paper(tmp_path):
     assert len(Project(p.slug).items()) == n_before
     r = exam_paper.build(p, p.items(), tmp_path / "paper.pdf", scope="all")
     assert r["items"] >= 1 and r["pages"] >= 1
+
+
+def test_export_log_and_appeal(tmp_path):
+    """출력 이력(번호↔키↔해시·스냅숏) → 이의신청 검색(내용 일부·문항키·출력번호) → 처리 기록·폐기 → 검토서 PDF."""
+    from exam_gen import appeal
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.output import excel, export_log
+    from exam_gen.review_ops import save_edit
+    from exam_gen.store import Project
+    p = Project.create("이의신청 테스트", "모의")
+    sid = p.add_source(SAMPLE_PDF)["id"]
+    p.set_page_map(sid, 17, "printed", True)
+    opts = dict(criteria()["defaults"])
+    start_batch(p, LLMSettings(provider="mock", workers=1), build_slots(p.pages, {1: 2, 3: 2}, opts), opts,
+                background=False)
+    r = excel.write(p, p.items(), tmp_path / "out.xlsx", scope="all")
+    hist = export_log.history(p)
+    assert len(hist) == 1 and hist[0]["kind"] == "xlsx" and hist[0]["n"] == r["count"]
+    row = hist[0]["items"][0]
+    assert appeal.by_number(p, hist[0]["id"], row["no"]) == row["key"]
+    it = p.item(row["key"])
+    old_stem = it["stem"]
+    # 띄어쓰기를 빼고 일부만 붙여넣어도 찾는다
+    q = old_stem[2:22].replace(" ", "")
+    found = appeal.search(q, [p.slug])
+    assert found and found[0]["key"] == it["key"] and found[0]["exports"] == 1
+    assert appeal.search(it["key"].lower(), [p.slug])[0]["key"] == it["key"]
+    # 출력 뒤에 고치면 '현재와 다름'으로 보이고, 출력 당시 문장으로도 찾는다
+    it["stem"] = "완전히 새로 쓴 발문으로 바꾸었다?"
+    save_edit(p, it, "테스트")
+    ex = export_log.item_exports(p, it["key"], appeal.content_hash(p.item(it["key"])))
+    assert ex and not ex[0]["same"] and ex[0]["snap"]["stem"] == old_stem
+    f2 = appeal.search(old_stem[2:22], [p.slug])
+    assert f2 and f2[0]["key"] == it["key"] and f2[0]["where"].startswith("출력 당시")
+    # 처리 기록: 폐기는 삭제 상태로 바꾼다
+    appeal.record(p, it["key"], "reject", "원고 근거 확인", "담당자")
+    appeal.record(p, it["key"], "discard", "모호함", "담당자")
+    recs = appeal.records(p, it["key"])
+    assert [x["outcome"] for x in recs] == ["discard", "reject"]
+    assert p.item(it["key"])["status"] == "deleted"
+    assert any(e["kind"] == "appeal" for e in p.events(it["key"]))
+    out = appeal.review_pdf(p, it["key"], tmp_path / "appeal.pdf")
+    assert out["pages"] >= 2
+    import pymupdf
+    with pymupdf.open(out["path"]) as d:
+        text = "".join(pg.get_text() for pg in d)
+    assert "이의신청 검토서" in text and "기각" in text and "문항 폐기" in text

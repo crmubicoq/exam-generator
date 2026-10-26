@@ -17,7 +17,8 @@ PAGES = {
     "출제": [st.Page("app_pages/progress.py", title="출제 진행", icon=":material/autorenew:")],
     "검수·출력": [st.Page("app_pages/quality.py", title="품질 리포트", icon=":material/analytics:"),
                  st.Page("app_pages/review.py", title="검수", icon=":material/fact_check:"),
-                 st.Page("app_pages/export.py", title="출력", icon=":material/download:")],
+                 st.Page("app_pages/export.py", title="출력", icon=":material/download:"),
+                 st.Page("app_pages/appeal.py", title="이의신청 조회", icon=":material/gavel:")],
 }
 
 nav = st.navigation(PAGES)

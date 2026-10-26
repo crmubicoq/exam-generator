@@ -6,7 +6,7 @@ import streamlit as st
 
 from exam_gen import ui
 from exam_gen import select_final
-from exam_gen.output import evidence_pdf, exam_paper, excel, numbering
+from exam_gen.output import evidence_pdf, exam_paper, excel, export_log, numbering
 
 p = ui.require_project(ui.current_project())
 ui.header("출력", "download", "승인된 문항으로 양식 엑셀과 근거PDF를 만듭니다.")
@@ -79,7 +79,7 @@ n_manual = sum(1 for it in sel if it.get("status") == "manual")
 st.markdown(f"**출력 대상 {len(sel)}문항**" + (f" · 자동 검증 탈락 {n_manual}문항 포함" if n_manual else ""))
 stamp = datetime.now().strftime("%Y%m%d_%H%M")
 base = p.dir / "exports"
-tag = {"all": "검수전_", "passed": "초안_", "approved": ""}[scope] + (f"배치{batch}_" if batch else "")
+tag = {"all": "검수전_", "passed": "초안_", "approved": "", "selected": "최종선정_"}.get(scope, "") + (f"배치{batch}_" if batch else "")
 
 
 def _name(path: str) -> str:
@@ -165,5 +165,27 @@ with st.container(border=True):
         r = res["paper"]
         st.download_button(f"{_name(r['path'])} ({r['items']}문항 · {r['pages']}쪽)", open(r["path"], "rb").read(),
                            file_name=_name(r["path"]), icon=":material/download:", key="dl_paper")
+
+# ---------- 출력 이력 ----------
+hist = export_log.history(p)
+with st.expander(f"출력 이력 ({len(hist)}회) — 언제 어떤 파일을 몇 문항으로 만들었는지", icon=":material/history:"):
+    st.caption("출력할 때마다 문항번호 ↔ 문항키 ↔ 그때의 문항 내용이 기록됩니다. 서비스에 올린 파일의 몇 번 문항에 "
+               "이의신청이 오면 **이의신청 조회** 화면에서 이 기록으로 바로 찾습니다.")
+    if not hist:
+        st.caption("아직 출력 기록이 없습니다.")
+    for e in hist[:30]:
+        c1, c2 = st.columns([4, 1.2], vertical_alignment="center")
+        c1.markdown(f"{e['at'][:16].replace('T', ' ')} · **{export_log.KIND_KO.get(e['kind'], e['kind'])}** · "
+                    f"{numbering.SCOPES.get(e['scope'], e['scope'])} · {e['n']}문항 · `{e['file']}`")
+        path = e.get("path")
+        try:
+            data = open(path, "rb").read() if path else None
+        except OSError:
+            data = None
+        if data:
+            c2.download_button("다시 받기", data, file_name=e["file"], key=f"hist_dl_{e['id']}",
+                               icon=":material/download:", width="stretch")
+        else:
+            c2.caption("파일 없음")
 
 st.caption(f"만든 파일은 프로젝트 폴더의 exports 에도 저장됩니다: {base}")

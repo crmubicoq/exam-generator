@@ -19,7 +19,7 @@ from openpyxl.utils import get_column_letter
 from ..config import TEMPLATE_XLSX, criteria, type_name
 from ..ingest.page_map import format_pages
 from ..plan.coverage import coverage_stats
-from . import numbering
+from . import export_log, numbering
 
 HIDDEN_COLS = ["문항키", "난이도", "근거 원문", "배치", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
 FIRST_HIDDEN = 18  # R
@@ -161,6 +161,7 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
+    export_log.record(project, "xlsx", out_path, final, scope=scope, batch=batch)
     return {"path": str(out_path), "count": len(final), "numbered": final}
 
 

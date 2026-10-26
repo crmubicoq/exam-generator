@@ -2,7 +2,7 @@
 import pandas as pd
 import streamlit as st
 
-from exam_gen import ui
+from exam_gen import backup, ui
 from exam_gen.store import (Project, delete_project, list_projects, list_trash, purge_trash, restore_project,
                             set_last_project)
 
@@ -57,7 +57,24 @@ if infos:
                 set_last_project(x["slug"], by="page")
                 st.switch_page("app_pages/home.py")
 
-            t1, t2, t3, t4 = st.tabs(["출제 이력", "사용 모델", "이름 바꾸기", "삭제"])
+            t1, t2, t3, t5, t4 = st.tabs(["출제 이력", "사용 모델", "이름 바꾸기", "백업", "삭제"])
+            with t5:
+                st.caption("출제가 끝날 때, 원고를 새 판으로 교체하기 전, 삭제하기 전에 자동으로 백업합니다(최근 10개 보관, "
+                           "프로그램 폴더의 '백업'). 출력 파일(exports)은 백업하지 않습니다.")
+                if st.button("지금 백업", key=f"bk_now_{x['slug']}", icon=":material/backup:"):
+                    backup.backup(p, "수동")
+                    st.rerun()
+                bks = backup.list_backups(x["slug"])
+                if not bks:
+                    st.caption("백업이 없습니다.")
+                for bk in bks:
+                    b1, b2 = st.columns([4, 1.3])
+                    b1.markdown(f"{bk['at']} · {bk['reason']} · {bk['mb']} MB")
+                    if b2.button("이 시점으로 되돌리기", key=f"bk_rs_{bk['name']}", width="stretch",
+                                 help="되돌리기 전 현재 상태도 자동으로 백업합니다."):
+                        backup.restore(p, bk["path"])
+                        st.toast("되돌렸습니다.", icon=":material/restore:")
+                        st.rerun()
             with t1:
                 if x["batches"]:
                     st.dataframe(pd.DataFrame([{

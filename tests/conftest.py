@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "input_17-43.pdf"
 _TMP = Path(tempfile.mkdtemp(prefix="examgen_test_"))
 os.environ["EXAM_GEN_PROJECTS"] = str(_TMP / "projects")
+os.environ["EXAM_GEN_NO_NOTIFY"] = "1"  # 테스트 중 윈도우 알림을 띄우지 않는다
 sys.path.insert(0, str(ROOT))
 
 

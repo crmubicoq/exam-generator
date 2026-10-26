@@ -11,7 +11,8 @@ from ..config import criteria
 
 
 # 출력 대상(담당자 협의 2026-10-23: 검수 없이도 출력 — 탈락 문항까지)
-SCOPES = {"all": "전체(검수 없이, 탈락 문항 포함)", "passed": "자동 검증 통과 문항", "approved": "승인한 문항만(납품 확정용)"}
+SCOPES = {"all": "전체(검수 없이, 탈락 문항 포함)", "passed": "자동 검증 통과 문항", "approved": "승인한 문항만(납품 확정용)",
+          "selected": "최종 선정 문항만(자동 선정 결과)"}
 
 
 def select(items: list[dict], draft: bool = False, batch: int | None = None, scope: str | None = None) -> list[dict]:
@@ -23,6 +24,8 @@ def select(items: list[dict], draft: bool = False, batch: int | None = None, sco
     scope = scope or ("passed" if draft else "approved")
     if scope == "all":
         out = [it for it in items if it.get("status") not in ("deleted", "prior")]
+    elif scope == "selected":
+        out = [it for it in items if it.get("selected") and it.get("status") not in ("deleted", "prior")]
     else:
         ok = integrity.is_draftable if scope == "passed" else integrity.is_exportable
         out = [it for it in items if ok(it)]

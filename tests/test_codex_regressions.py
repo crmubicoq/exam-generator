@@ -611,3 +611,30 @@ def test_fast_mode_skips_llm_gates_and_verify_later():
     mp.undo()
     assert r["ok"] + r["manual"] == len(sk) and calls.count("solve") == calls.count("review") >= 1
     assert not review_ops.skipped_items(p)
+
+
+def test_final_select_backup_and_exam_paper(tmp_path):
+    from exam_gen import backup, select_final
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.output import exam_paper, numbering
+    from exam_gen.store import Project
+    p = Project.create("선정 백업 테스트", "모의")
+    sid = p.add_source(SAMPLE_PDF)["id"]
+    p.set_page_map(sid, 17, "printed", True)
+    opts = dict(criteria()["defaults"])
+    start_batch(p, LLMSettings(provider="mock", workers=1), build_slots(p.pages, {1: 3, 3: 3, 5: 3}, opts), opts,
+                background=False)
+    ok = [it for it in p.items() if it["status"] in ("approved", "auto_pass", "warn")]
+    rep = select_final.select(p, target=max(1, len(ok) - 2))
+    assert rep["selected"] == max(1, len(ok) - 2)
+    sel = numbering.select(p.items(), scope="selected")
+    assert len(sel) == rep["selected"] and all(it["status"] in ("approved", "auto_pass", "warn") for it in sel)
+    # 배치가 끝나면 자동 백업이 있고, 되돌리면 그 시점의 문항 수로 돌아간다
+    bks = backup.list_backups(p.slug)
+    assert bks and any("출제" in b["reason"] for b in bks)
+    n_before = len(p.items())
+    p.delete_items([p.items()[0]["key"]])
+    backup.restore(p, bks[0]["path"])
+    assert len(Project(p.slug).items()) == n_before
+    r = exam_paper.build(p, p.items(), tmp_path / "paper.pdf", scope="all")
+    assert r["items"] >= 1 and r["pages"] >= 1

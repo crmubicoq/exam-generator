@@ -181,6 +181,16 @@ with right:
                f"근거 {saved.get('evidence_level') or '없음'} · 시도 {saved['validation'].get('attempts')} · "
                f"생성 {saved['gen'].get('provider')}")
 
+    # --- 최종 선정(출력 화면의 자동 선정 결과) — 사람이 바꿀 수 있다 ---
+    if any(it.get("selected") for it in items):
+        _sel = st.toggle("최종 선정에 포함", value=bool(saved.get("selected")), key=f"sel_{saved['key']}",
+                         help="출력 화면 '최종 문항 자동 선정' 결과입니다. 바꾸면 '최종 선정 문항만' 출력에 반영됩니다.")
+        if _sel != bool(saved.get("selected")):
+            _it = p.item(saved["key"])
+            _it["selected"] = _sel
+            p.save_item(_it, "final_select_manual", {"selected": _sel})
+            st.rerun()
+
     # --- 원고 변경 표시 ---
     ms = saved["validation"].get("ms_change")
     if ms:

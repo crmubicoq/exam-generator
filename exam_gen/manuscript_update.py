@@ -122,7 +122,9 @@ def relocate_item(project, it: dict, remap) -> bool:
 
 def replace_source(project, sid: str, new_file: Path, filename: str | None = None) -> dict:
     """원고를 새 판으로 교체한다(원고 ID 유지). 토큰 0. 반환: 변경 보고서 요약."""
+    from .backup import backup
     filename = filename or Path(new_file).name
+    backup(project, "원고 교체 전")
     meta = project.meta
     s = next(x for x in meta["sources"] if x["id"] == sid)
     v_old = s.get("version", 1)

@@ -39,7 +39,15 @@ def live():
     status = {"orphan": "orphan", "running_elsewhere": "running"}.get(state, pr.get("status"))
     total = pr.get("slots_total", 0) or 1
     got = pr.get("accepted", 0) + pr.get("manual", 0)
-    st.progress(min(got / total, 1.0), text=f"{got}/{total} 슬롯 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}")
+    eta = ""
+    if status in ("running", "running_here") and got and pr.get("started"):
+        from datetime import datetime
+        el = (datetime.now() - datetime.fromisoformat(pr["started"])).total_seconds()
+        eta = f" · 예상 남은 시간 약 {max(1, round(el / got * (total - got) / 60))}분"
+    st.progress(min(got / total, 1.0),
+                text=f"{got}/{total} 슬롯 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}{eta}")
+    if status in ("running", "running_here"):
+        st.caption("끝나거나 멈추면 윈도우 알림이 뜹니다. 이 화면을 닫아도 출제는 계속됩니다(대시보드 실행 창은 닫지 마세요).")
     c = st.columns(6)
     c[0].metric("상태", {"running": "진행 중", "running_here": "진행 중", "done": "완료", "stopped": "중지됨", "error": "오류",
                         "partial": "부분 완료", "orphan": "중단됨"}.get(status, status), border=True)

@@ -87,6 +87,8 @@ def delete_project(slug: str) -> Path:
     src = PROJECTS_DIR / slug
     if not (src / "project.json").exists():
         raise FileNotFoundError(slug)
+    from .backup import backup
+    backup(Project(slug), "삭제 전")
     TRASH_DIR.mkdir(parents=True, exist_ok=True)
     dst = TRASH_DIR / f"{datetime.now():%Y%m%d_%H%M%S}_{slug}"
     with _LOCK:

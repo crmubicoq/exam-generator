@@ -5,7 +5,8 @@ from datetime import datetime
 import streamlit as st
 
 from exam_gen import ui
-from exam_gen.output import evidence_pdf, excel, numbering
+from exam_gen import select_final
+from exam_gen.output import evidence_pdf, exam_paper, excel, numbering
 
 p = ui.require_project(ui.current_project())
 ui.header("출력", "download", "승인된 문항으로 양식 엑셀과 근거PDF를 만듭니다.")
@@ -13,6 +14,32 @@ items = p.items()
 c = Counter(it["status"] for it in items)
 # 결과 파일은 프로젝트별로 기억한다(다른 프로젝트로 바꿨을 때 이전 파일이 보이지 않게)
 res = st.session_state.setdefault("export_results", {}).setdefault(str(p.dir), {})
+
+# ---------- 최종 문항 자동 선정 ----------
+with st.expander("최종 문항 자동 선정 — 여유분까지 출제한 문항에서 목표 수만큼 고르기", icon=":material/checklist:",
+                 expanded=False):
+    st.caption("목표 난이도·유형·차시 분포에 맞춰 고릅니다. 같은 원리 묶음에서는 1문항만, 정답 단서·이의 제기·AI 검증 생략 문항은 "
+               "뒤로 미룹니다(수동확인·삭제는 제외). AI를 쓰지 않습니다. 고른 결과는 아래 출력 대상 **'최종 선정 문항만'**으로 내보냅니다.")
+    _opts = p.meta.get("options", {})
+    c1, c2 = st.columns([1, 2], vertical_alignment="bottom")
+    n_target = c1.number_input("목표 문항 수", 1, 5000, int(_opts.get("total", 300)))
+    if c2.button("자동 선정", icon=":material/auto_awesome:"):
+        st.session_state["final_select"] = select_final.select(p, int(n_target))
+        st.rerun()
+    rep = st.session_state.get("final_select")
+    n_sel = sum(1 for it in items if it.get("selected") and it["status"] not in ("deleted",))
+    if n_sel:
+        st.markdown(f"현재 선정 **{n_sel}문항**")
+    if rep:
+        st.write(f"목표 {rep['target']} · 선정 {rep['selected']} (후보 {rep['candidates']}, 원리 반복으로 뒤로 미룬 문항 {rep['repeat_spare']})")
+        st.caption("유형 " + " · ".join(f"{k} {v[0]}/{v[1]}" for k, v in rep["type"].items())
+                   + "  |  난이도 " + " · ".join(f"{k} {v[0]}/{v[1]}" for k, v in rep["difficulty"].items())
+                   + "  |  차시 " + " · ".join(f"{k}차시 {v[0]}/{v[1]}" for k, v in rep["chasi"].items()) + "  (선정/목표)")
+        if rep["lacking"]:
+            st.warning(f"후보가 모자라 {rep['lacking']}문항이 부족합니다. 추가 출제가 필요합니다.", icon=":material/warning:")
+        if rep["short_difficulty"]:
+            st.warning("목표보다 모자란 난이도: " + " · ".join(f"{k} {v}문항" for k, v in rep["short_difficulty"].items()),
+                       icon=":material/trending_down:")
 
 # ---------- 출력 설정 ----------
 with st.container(border=True):
@@ -122,5 +149,21 @@ with k3.container(border=True, height="stretch"):
                                                   mode="overview", batch=batch, scope=scope)]
     with act:
         _show_pdfs("overview")
+
+# ---------- 시험지 PDF ----------
+with st.container(border=True):
+    st.markdown("##### :material/quiz: 시험지 PDF (검토·회의용)")
+    st.caption("문항번호·발문·보기를 시험지처럼 싣습니다. 위에서 고른 출력 대상·범위를 따릅니다.")
+    c1, c2, c3 = st.columns([1, 1, 1.2], vertical_alignment="bottom")
+    with_ans = c1.toggle("정답·해설 포함", value=True)
+    by_ch = c2.toggle("차시별 구분", value=True)
+    if c3.button("시험지 만들기", type="primary", icon=":material/play_arrow:", width="stretch"):
+        with st.spinner("시험지 작성 중…"):
+            res["paper"] = exam_paper.build(p, items, base / f"{tag}시험지{'_정답포함' if with_ans else ''}_{stamp}.pdf",
+                                            scope=scope, batch=batch, with_answer=with_ans, by_chasi=by_ch)
+    if res.get("paper"):
+        r = res["paper"]
+        st.download_button(f"{_name(r['path'])} ({r['items']}문항 · {r['pages']}쪽)", open(r["path"], "rb").read(),
+                           file_name=_name(r["path"]), icon=":material/download:", key="dl_paper")
 
 st.caption(f"만든 파일은 프로젝트 폴더의 exports 에도 저장됩니다: {base}")

@@ -60,7 +60,11 @@ class LLMClient:
                 raise
             except Exception as e:  # noqa: BLE001 — 네트워크·일시 오류는 재시도
                 last = e
-                time.sleep(2 * (attempt + 1))
+                msg = str(e).lower()
+                if any(k in msg for k in ("rate limit", "rate_limit", "usage limit", "429", "overloaded", "529")):
+                    time.sleep(60 * (attempt + 1))  # 사용 한도·과부하: 1분, 2분 기다린 뒤 다시(이후 실패는 '부분 완료')
+                else:
+                    time.sleep(2 * (attempt + 1))
         raise LLMError(f"LLM 호출 실패({task}): {last}")
 
     # ---------- Anthropic ----------

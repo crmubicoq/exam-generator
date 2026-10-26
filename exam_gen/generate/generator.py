@@ -111,6 +111,11 @@ class Pipeline:
             self._flush()
             self.p.set_batch_status(self.batch, self.prog["status"], self.prog)
             self.p.log("batch_end", self.prog, batch=self.batch)
+            # 끝나거나 멈추면 윈도우 알림 + 자동 백업(실패해도 출제 결과에는 영향 없음)
+            from .. import backup, notify
+            notify.batch_finished(self.p.meta.get("name", self.p.slug), self.batch, self.prog)
+            if self.prog["status"] in ("done", "partial", "error", "stopped"):
+                backup.backup(self.p, f"출제 배치{self.batch} 끝")
             RUNNING.pop((self.p.slug, self.batch), None)
 
     def _pool_review(self):

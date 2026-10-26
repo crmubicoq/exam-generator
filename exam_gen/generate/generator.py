@@ -280,7 +280,8 @@ class Pipeline:
                           next_label=pages[next_g]["label"] if next_g is not None else "",
                           next_text=_head(self.p.page_text(next_g)) if next_g is not None else "",
                           slots=[{"sid": s["sid"], "spec": slot_spec(s)} for s in chunk],
-                          related=_related(self.p, g) if any(s["difficulty"] in HARD for s in chunk) else [],
+                          related=_related(self.p, g, wide=any(s["difficulty"] == "최상" for s in chunk))
+                          if any(s["difficulty"] in HARD for s in chunk) else [],
                           avoid=avoid, feedback=fb,
                           revise=[{"sid": s["sid"], **s["revise"]} for s in chunk if s.get("revise")])
             system = render("generate_system.j2", rubric=criteria()["difficulty_rubric"])
@@ -465,11 +466,14 @@ def _neighbor(pages, g, step):
     return None
 
 
-def _related(project, g: int, k: int = 3, max_chars: int = 1500) -> list[dict]:
-    """상·최상 슬롯용 관련 페이지: 같은 원고·같은 차시에서 출제 대상 앞뒤 ±1을 뺀 가까운 페이지 k장."""
+def _related(project, g: int, k: int = 3, max_chars: int = 1500, wide: bool = False) -> list[dict]:
+    """상·최상 슬롯용 관련 페이지: 같은 원고·같은 차시에서 출제 대상 앞뒤 ±1을 뺀 가까운 페이지 k장.
+    wide(최상, 자격시험형 사례): 인접 차시까지 넓혀 5장 — 여러 개념·절차를 사례에 함께 적용할 수 있게."""
     pages = project.pages
     base = pages[g]
-    cands = [p for p in pages if p["src"] == base["src"] and p["chasi"] == base["chasi"] and not p["excluded"]
+    k = 5 if wide else k
+    near = (lambda c: abs((c or 0) - (base["chasi"] or 0)) <= 1) if wide else (lambda c: c == base["chasi"])
+    cands = [p for p in pages if p["src"] == base["src"] and near(p["chasi"]) and not p["excluded"]
              and abs(p["g"] - g) > 1]
     cands.sort(key=lambda p: abs(p["g"] - g))
     return [{"label": p["label"], "text": project.page_text(p["g"])[:max_chars]} for p in sorted(cands[:k], key=lambda p: p["g"])]

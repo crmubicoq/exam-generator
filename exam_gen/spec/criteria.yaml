@@ -15,6 +15,7 @@ defaults:
   max_retries: 3
   difficulty_topup: false     # 배치 끝에 실제 난이도가 모자란 만큼 한 번 더 출제(실측: 효과 낮고 비용 +47% — 기본 끔)
   workers: 3
+  fast_mode: false            # 빠른 출제: G4 독립 풀이·G5 검수(AI) 생략, 무료 검사(G1~G3·G6)는 유지 — 나중에 검증 가능
 
 type_names: {mcq: 선다형, ox: 진위형, short: 단답형}
 type_order: [mcq, ox, short]

@@ -580,3 +580,34 @@ def test_manuscript_replace_flags_only_changed_items_without_llm(tmp_path, monke
     f3 = {it["key"]: it["validation"]["ms_change"] for it in MU.flagged_items(p)}
     assert rep3["version"] == 3 and c["key"] in f3 and f3[c["key"]]["version"] == 3
     assert a["key"] not in f3 and b["key"] in f3  # 처리하지 않은 b는 표시가 남는다
+
+
+def test_fast_mode_skips_llm_gates_and_verify_later():
+    from exam_gen import review_ops
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.llm.client import LLMClient
+    from exam_gen.store import Project
+    p = Project.create("빠른 출제 테스트", "모의")
+    sid = p.add_source(SAMPLE_PDF)["id"]
+    p.set_page_map(sid, 17, "printed", True)
+    opts = {**criteria()["defaults"], "fast_mode": True}
+    calls = []
+    orig = LLMClient.structured
+
+    def spy(self, system, user, schema, **k):
+        calls.append(k.get("task"))
+        return orig(self, system, user, schema, **k)
+    import pytest as _pt
+    mp = _pt.MonkeyPatch()
+    mp.setattr(LLMClient, "structured", spy)
+    start_batch(p, LLMSettings(provider="mock", workers=1), build_slots(p.pages, {1: 3, 3: 3}, opts), opts,
+                background=False)
+    assert set(calls) == {"generate"}  # G4(solve)·G5(review)·풀 점검(pool) 호출 없음
+    sk = review_ops.skipped_items(p)
+    assert sk and all(it["status"] == "warn" and not integrity.is_verified(it) for it in sk)
+    assert review_ops.estimate_verify(LLMSettings(provider="mock", chunk_size=8), len(sk)) == 2
+    calls.clear()
+    r = review_ops.verify_skipped(p, LLMSettings(provider="mock", workers=1), [it["key"] for it in sk])
+    mp.undo()
+    assert r["ok"] + r["manual"] == len(sk) and calls.count("solve") == calls.count("review") >= 1
+    assert not review_ops.skipped_items(p)

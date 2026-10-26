@@ -127,7 +127,8 @@ def analyze(p: Project, batch: int | None = None) -> dict:
                    "manual": sum(1 for it in items if it["status"] == "manual"),
                    "approved": sum(1 for it in items if it["status"] == "approved"),
                    "warn": sum(1 for it in ok if it["status"] == "warn"),
-                   "verified": sum(1 for it in ok if integrity.is_verified(it))},
+                   "verified": sum(1 for it in ok if integrity.is_verified(it)),
+                   "llm_skipped": sum(1 for it in ok if (it.get("validation") or {}).get("llm_skipped"))},
         "values": values, "grades": grades,
         "difficulty": {"target": {lv: target.get(lv, 0) for lv in LEVELS}, "final": {lv: final.get(lv, 0) for lv in LEVELS},
                        # 재분류는 목표 달성이 아니다 — 목표보다 모자란 난이도를 따로 보여 준다(Codex 검수)

@@ -61,12 +61,17 @@ with st.container(border=True):
         numbering = c3.selectbox("문항번호", ["continuous", "per_type"], index=["continuous", "per_type"].index(opts["numbering"]),
                                  format_func=lambda x: {"continuous": "전체 연번(양식)", "per_type": "유형별 1번부터(지침)"}[x])
         prefix = st.checkbox("문항 앞에 [과목/주제명] 붙이기 (유의사항 권고)", value=bool(opts["subject_prefix"]))
+        fast = st.checkbox("빠른 출제 — AI 독립 풀이·검수 생략", value=bool(opts.get("fast_mode", False)))
+        st.caption("급할 때만 사용합니다. 형식·원고 근거 대조·규칙·중복 검사는 그대로 하지만, **정답 오류·이의 제기·함정 모순은 확인하지 "
+                   "않습니다.** 시간·AI 사용량이 약 1/3로 줄고, 문항은 'AI 검증 생략'으로 표시됩니다. 나중에 품질 리포트·검수 화면에서 "
+                   "'생략한 AI 검증'을 실행하면 일반 문항과 같아집니다.")
         topup = st.checkbox("난이도 보충 출제 — 실제 난이도(검수 판정)가 목표보다 모자라면 배치 끝에 한 번 더 출제",
                             value=bool(opts.get("difficulty_topup", False)),
                             help="실측(30문항): 보충 14문항 중 8문항이 다시 '하'로 판정되어 효과는 낮고 비용은 약 47% 늘었다. 기본은 끔.")
 
 new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct": pos, "combo_pct": combo,
-            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup}
+            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup,
+            "fast_mode": fast}
 
 # ---------- 수량과 페이지 할당 ----------
 st.subheader(":material/grid_view: 수량과 페이지 할당")
@@ -147,6 +152,9 @@ if n and not problems:
                f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
                f"조합형 {sm['combo']} · 유형별 난이도: 단답형은 하·중, 진위형은 상까지(상은 정답 X)")
     est = estimate(s, sm["total"])
+    if new_opts.get("fast_mode"):  # AI 검증(G4·G5) 생략 — 실측 호출의 약 1/3(추정)
+        est = {**est, "usd": round(est["usd"] / 3, 1), "minutes": max(1, round(est["minutes"] / 3)),
+               "basis": est["basis"] + " · 빠른 출제(AI 검증 생략) 추정 1/3"}
     cost_txt = (f"구독 사용량에서 차감 (API로 환산하면 약 ${est['usd']})" if est["subscription"]
                 else f"약 ${est['usd']}")
     st.info(f"예상 소요 약 {est['minutes']}분 · 비용 {cost_txt} · 공급자 {' / '.join(sorted(set(s.provider_for(r) for r in ('generate', 'solve', 'review'))))} "

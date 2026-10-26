@@ -47,6 +47,25 @@ with st.container(border=True):
         for k in bad:
             st.markdown(f"- **{CAT_KO[k]}** — {ACTION[k]}")
 
+# ---------- 빠른 출제로 생략한 AI 검증 ----------
+from exam_gen import review_ops as _ro  # noqa: E402
+from exam_gen.llm import settings as _ls  # noqa: E402
+
+_skipped = _ro.skipped_items(p)
+if _skipped:
+    _s = _ls.load()
+    with st.container(border=True):
+        st.markdown(f"#### :orange[:material/bolt:] AI 검증을 생략한 문항 {len(_skipped)}개 (빠른 출제)")
+        st.caption("정답 오류·이의 제기·함정 모순을 아직 확인하지 않은 문항입니다. 이 문항들은 정답·이의 제기 등급에 반영되지 않았고, "
+                   "승인 전에 검증해야 합니다. 여러 문항을 묶어 검증하므로 문항마다 따로 하는 것보다 AI 호출이 적습니다.")
+        if st.button(f"생략한 AI 검증 실행 — 예상 AI 호출 약 {_ro.estimate_verify(_s, len(_skipped))}회",
+                     type="primary", icon=":material/verified:", key="verify_skipped"):
+            _bar = st.progress(0.0, text="검증 중…")
+            _r = _ro.verify_skipped(p, _s, [it["key"] for it in _skipped],
+                                    progress=lambda i, t: _bar.progress(i / t, text=f"검증 중… {i}/{t}"))
+            st.success(f"검증 완료: 통과 {_r['ok']} · 탈락(수동확인) {_r['manual']}")
+            st.rerun()
+
 # ---------- 항목별 등급 ----------
 cols = st.columns(len(GRADE_RULES))
 for col, (k, (name, desc, cuts)) in zip(cols, GRADE_RULES.items()):

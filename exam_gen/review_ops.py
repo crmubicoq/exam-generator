@@ -96,6 +96,56 @@ def set_status(project: Project, key: str, status: str, reason: str = ""):
     project.save_item(item, f"set_{status}", {"reason": reason})
 
 
+def skipped_items(project: Project) -> list[dict]:
+    return [it for it in project.items() if (it.get("validation") or {}).get("llm_skipped")
+            and it.get("status") != "deleted"]
+
+
+def estimate_verify(settings, n: int) -> int:
+    """생략한 AI 검증의 예상 호출 수: 묶음(chunk_size)마다 G4 1회 + G5 1회."""
+    size = max(1, getattr(settings, "chunk_size", 8))
+    return 2 * ((n + size - 1) // size)
+
+
+def verify_skipped(project: Project, settings, keys: list[str], progress=None) -> dict:
+    """빠른 출제로 생략한 G4·G5를 묶음 단위로 실행한다. 통과하면 일반 문항과 같아지고, 탈락하면 수동확인."""
+    client = LLMClient(settings)
+    size = max(1, getattr(settings, "chunk_size", 8))
+    ok = bad = 0
+    for i in range(0, len(keys), size):
+        items = [project.item(k) for k in keys[i:i + size]]
+        items = [it for it in items if it]
+        code = {it["key"]: revalidate_code(project, it) for it in items}
+        works = [copy.deepcopy(it) for it in items]
+        v4 = list(solver.solve(client, settings, project, works).values())
+        v5 = list(review_llm.review(client, settings, project, works, project.meta.get("objectives", "")).values())
+        for it, (f4, w4, raw4), (f5, w5, raw5) in zip(items, v4, v5):
+            cf, cw = code[it["key"]]
+            v = it["validation"]
+            v["G4"], v["G5"] = raw4, raw5
+            v["fails"] = cf + f4 + f5
+            v["warnings"] = [w for w in cw + w4 + w5 if not w.startswith("AI 검증 생략")]
+            v["llm_skipped"] = False
+            v["llm_stale"] = False
+            if v["fails"]:
+                v.pop("verified", None)
+                if it["status"] != "deleted":
+                    it["status"] = "manual"
+                bad += 1
+            else:
+                review_llm.relabel_difficulty(it)
+                review_llm.merge_variants(it)
+                integrity.mark_verified(it)
+                if it["status"] != "deleted":
+                    it["status"] = "warn" if v["warnings"] else "auto_pass"
+                ok += 1
+            project.save_item(it, "verify_skipped", {"fails": v["fails"][:5]})
+        if progress:
+            progress(min(i + size, len(keys)), len(keys))
+    project.log("verify_skipped", {"ok": ok, "manual": bad})
+    return {"ok": ok, "manual": bad}
+
+
 def rerun_llm_gates(project: Project, settings, key: str) -> dict:
     """한 문항에 대해 코드 관문 + G4 독립 풀이 + G5 LLM 검수를 다시 돌리고, 모두 통과하면 검증 기록을 갱신한다."""
     item = project.item(key)

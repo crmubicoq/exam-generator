@@ -100,7 +100,7 @@ class Pipeline:
                 else:
                     self.prog["status"] = "done"
                     self.prog["message"] = "출제 완료"
-            if self.prog["status"] in ("done", "partial"):
+            if self.prog["status"] in ("done", "partial") and not self.opts.get("fast_mode"):
                 self._pool_review()
         except Exception as e:  # noqa: BLE001
             self.prog["status"] = "error"
@@ -223,7 +223,9 @@ class Pipeline:
                     self._fail(item, s, fails, feedback, last, failed)
                 else:
                     cands.append((item, s))
-            if cands:
+            if cands and self.opts.get("fast_mode"):
+                cands = self._fast_gates(cands, feedback, last, failed)  # 빠른 출제: AI 검증(G4·G5) 생략
+            elif cands:
                 cands = self._llm_gates(cands, feedback, last, failed)
                 if cands is None:
                     break  # G4~G6 도중 중지 — 통과가 확정되지 않은 후보는 저장하지 않는다
@@ -408,6 +410,25 @@ class Pipeline:
                 out.append((item, s))
         return out
 
+    def _fast_gates(self, cands, feedback, last, failed):
+        """빠른 출제: G6 중복만 확인하고 G4·G5(AI)는 건너뛴다. 문항은 '미검증'으로 남아 승인 전에 AI 검증이 필요하다."""
+        out = []
+        for item, s in cands:
+            with self.lock:
+                others = [e for e in self.existing if not s.get("revise_of") or e.get("key") != s["revise_of"]]
+                f, w, best = dedup.check(item, others)
+                item["validation"]["G6"] = best
+                item["validation"]["warnings"] += w
+                if not f:
+                    item["_tokens"] = dedup.tokens(item)
+                    self.existing.append(item)
+            if f:
+                self._fail(item, s, f, feedback, last, failed)
+            else:
+                item["validation"]["llm_skipped"] = True
+                out.append((item, s))
+        return out
+
     def _fail(self, item, s, fails, feedback, last, failed):
         item["validation"]["fails"] = fails
         feedback[s["sid"]] = fails
@@ -430,9 +451,14 @@ class Pipeline:
         item["validation"]["fails"] = []
         item["validation"]["passed_at"] = now()
         # 실제 난이도로 재분류(두 단계 이상 차이는 G5에서 이미 탈락). 모자란 난이도는 배치 끝에 _topup()이 보충한다.
-        review_llm.relabel_difficulty(item)
-        review_llm.merge_variants(item)  # 단답형 허용 답안(G5 제안) — 검증 기록 전에 합쳐 내용 해시에 포함
-        integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
+        if item["validation"].get("llm_skipped"):
+            item["status"] = "warn"
+            item["validation"]["warnings"].append("AI 검증 생략(빠른 출제) — 정답 오류·이의 제기·함정 모순은 확인하지 않았습니다. 승인 전 '생략한 AI 검증'을 실행하세요")
+            item["difficulty_target"] = item["slot"]["difficulty"]
+        else:
+            review_llm.relabel_difficulty(item)
+            review_llm.merge_variants(item)  # 단답형 허용 답안(G5 제안) — 검증 기록 전에 합쳐 내용 해시에 포함
+            integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)
         rev = item["slot"].get("revise")
         if item["slot"].get("revise_of"):

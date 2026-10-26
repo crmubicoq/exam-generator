@@ -17,6 +17,7 @@ import re
 import shutil
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -624,6 +625,16 @@ def _sha256(path: Path) -> str:
 
 
 def _atomic_write(path: Path, text: str):
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    """임시 파일에 쓴 뒤 바꿔치기한다. Windows에서는 다른 프로세스(대시보드 진행 화면, 백신 검사)가 대상 파일을 잠깐
+    열고 있으면 바꿔치기가 PermissionError로 실패한다 — 잠시 기다렸다가 다시 시도한다(간헐 테스트 실패의 원인)."""
+    tmp = path.with_suffix(path.suffix + f".{uuid.uuid4().hex[:8]}.tmp")  # 스레드마다 다른 임시 파일
     tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
+    for i in range(20):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if i == 19:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.05 * (i + 1))

@@ -22,7 +22,8 @@ PAGE_SIZE = 50          # 목록 한 쪽에 담는 문항 수
 LIST_H = 660            # 왼쪽 목록 상자 높이(px) — 안에서만 스크롤
 BODY_H = 480            # 오른쪽 문항 본문 상자 높이(px)
 CIRCLED = "①②③④"
-QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경", ()), "auto": ("자동통과", ("auto_pass",)),
+QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경", ()), "skip": ("AI 검증 생략", ()),
+          "auto": ("자동통과", ("auto_pass",)),
           "done": ("승인", ("approved",)), "del": ("삭제", ("deleted",)),
           "all": ("전체", ("manual", "warn", "auto_pass", "approved", "deleted"))}
 _ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:material/task_alt:]",
@@ -79,6 +80,8 @@ q1, q2 = st.columns([4, 1], vertical_alignment="center")
 def _in_queue(it, q):
     if q == "ms":  # 원고를 새 판으로 바꾼 뒤 근거 문장이 바뀌거나 사라진 문항
         return bool((it.get("validation") or {}).get("ms_change")) and it["status"] != "deleted"
+    if q == "skip":  # 빠른 출제로 AI 검증(G4·G5)을 생략한 문항 — 품질 리포트에서 한꺼번에 검증
+        return bool((it.get("validation") or {}).get("llm_skipped")) and it["status"] != "deleted"
     return it["status"] in QUEUES[q][1]
 
 

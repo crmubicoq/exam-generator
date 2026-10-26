@@ -24,6 +24,7 @@ from . import numbering
 HIDDEN_COLS = ["문항키", "난이도", "근거 원문", "배치", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
 FIRST_HIDDEN = 18  # R
 GRAY = PatternFill("solid", fgColor="D9D9D9")
+PINK = PatternFill("solid", fgColor="FFD9D9")  # 최종 시트의 자동 검증 탈락(수동확인) 문항
 YELLOW = PatternFill("solid", fgColor="FFFF00")
 RED = Font(color="FF0000")
 STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
@@ -43,6 +44,9 @@ def answer_cell(item: dict):
         return 1 if item["answer"] == "O" else 2
     if item["type"] == "mcq":
         return int(item["answer"])
+    # 단답형: 정답 옆에 유사답변을 함께 적는다(담당자 협의 2026-10-23). 자동채점용 목록은 숨김 열 '허용 정답'
+    if item.get("short_variants"):
+        return f"{item['answer']} (유사답변: {', '.join(item['short_variants'])})"
     return item["answer"]
 
 
@@ -74,10 +78,10 @@ def row_values(project, item: dict, opts: dict) -> list:
 
 
 def _scoring(item: dict, opts: dict) -> str:
-    """채점기준 열. 단답형은 허용 답안을 함께 적는다(띄어쓰기 차이는 자동 무시)."""
+    """채점기준 열. 단답형은 유사답변도 정답으로 인정한다고 적는다(띄어쓰기 차이는 자동 무시)."""
     base = opts.get("scoring", "시스템 자동채점")
     if item["type"] == "short" and item.get("short_variants"):
-        return f"{base} (허용 답안: {', '.join(item['short_variants'])})"
+        return f"{base} (유사답변도 정답 인정: {', '.join(item['short_variants'])})"
     return base
 
 
@@ -94,9 +98,11 @@ def hidden_values(project, item: dict) -> list:
             "{^}".join(item.get("short_variants") or [])]
 
 
-def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False, batch: int | None = None) -> dict:
+def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False, batch: int | None = None,
+          scope: str | None = None) -> dict:
     opts = {**criteria()["defaults"], **project.meta.get("options", {})}
-    final = numbering.number(numbering.select(items_all, draft=draft, batch=batch), opts.get("numbering", "continuous"))
+    scope = scope or ("passed" if draft else "approved")
+    final = numbering.number(numbering.select(items_all, batch=batch, scope=scope), opts.get("numbering", "continuous"))
     no_by_key = {it["key"]: it for it in final}
 
     wb = load_workbook(TEMPLATE_XLSX)
@@ -120,9 +126,14 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
     # 1) 최종 시트
     for r, it in enumerate(final, start=4):
         _write_row(ws, r, row_values(project, it, opts) + hidden_values(project, it), styles, height)
+        if it.get("status") == "manual":
+            for c in range(1, 14):
+                ws.cell(row=r, column=c).fill = PINK
     for i in range(len(HIDDEN_COLS)):
         ws.column_dimensions[get_column_letter(FIRST_HIDDEN + i)].hidden = True
-    if draft:
+    if scope == "all":
+        ws["A1"] = f"{ws['A1'].value or ''}  ※ 검수 전 문항 포함 — 연한 빨강 행은 자동 검증 탈락(수동확인) 문항"
+    elif scope == "passed":
         ws["A1"] = f"{ws['A1'].value or ''}  ※ 초안 — 사람 승인 전 문항 포함"
 
     # 2) 검수용 시트: 최종 문항 + 삭제·수동확인 문항(맨 뒤)

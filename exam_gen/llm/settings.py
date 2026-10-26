@@ -37,7 +37,7 @@ _KEYRING_SERVICE = "exam-generator"
 
 @dataclass
 class LLMSettings:
-    provider: str = "mock"                      # 생성 공급자
+    provider: str = "claude_agent_sdk"          # 생성 공급자(담당자 협의 2026-10-23: 당분간 Claude 구독)
     provider_solve: str = ""                    # G4 공급자("" = 생성과 같음)
     provider_review: str = ""                   # G5 공급자("" = 생성과 같음)
     model_generate: str = "claude-sonnet-5-5"

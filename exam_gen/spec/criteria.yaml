@@ -52,11 +52,11 @@ thresholds:
 
 colors:
   correct: [1.0, 0.95, 0.0]
-  wrong: [1.0, 0.6, 0.2]
+  wrong: [0.35, 0.6, 1.0]        # 함정 원문: 파랑(정답 근거 노랑과 확실히 구분 — 담당자 협의 2026-10-23)
   label_correct: [0.6, 0.5, 0.0]
-  label_wrong: [0.9, 0.45, 0.0]
+  label_wrong: [0.1, 0.3, 0.8]
   bg_correct: [1.0, 0.97, 0.85]
-  bg_wrong: [1.0, 0.92, 0.85]
+  bg_wrong: [0.88, 0.93, 1.0]
   opacity: 0.4
 
 fonts:

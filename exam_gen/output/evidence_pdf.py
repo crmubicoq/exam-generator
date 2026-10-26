@@ -29,7 +29,7 @@ def _css() -> str:
             "h1{font-size:20pt;margin:0 0 6pt 0} h2{font-size:13pt;margin:10pt 0 4pt 0;color:#333}"
             ".muted{color:#666} .box{border:1px solid #999;padding:6pt;margin:4pt 0}"
             "table{border-collapse:collapse;width:100%} td,th{border:1px solid #999;padding:2pt 4pt;font-size:8.5pt}"
-            "th{background:#eee} .y{background:#fff3a0} .o{background:#ffcf9e} .ans{font-weight:bold;color:#b00}")
+            "th{background:#eee} .y{background:#fff3a0} .o{background:#c9ddff} .ans{font-weight:bold;color:#b00}")
 
 
 def _archive():
@@ -79,7 +79,7 @@ def _guide(doc):
     _html_page(doc, """<h2>근거PDF 사용 안내</h2>
     <p><b>1. 하이라이트 색상</b></p>
     <table><tr><td class="y" style="width:70pt">노란색</td><td>참인 진술의 근거 — 문항의 옳은 진술(정답 근거)이 원고의 어느 부분에서 나왔는지 표시</td></tr>
-    <tr><td class="o">주황색</td><td>함정 진술의 원문 — 원고는 옳은 내용이지만, 함정 보기·X 문항에서 일부를 바꿔 사용한 위치</td></tr></table>
+    <tr><td class="o">파란색</td><td>함정 진술의 원문 — 원고는 옳은 내용이지만, 함정 보기·X 문항에서 일부를 바꿔 사용한 위치</td></tr></table>
     <p><b>2. 좌측 여백 라벨</b> — 라벨 형식: Q[문항 라벨]-[대상]</p>
     <table><tr><th>문항 유형</th><th>대상 표기</th><th>예시</th></tr>
     <tr><td>선다형(①②③④)</td><td>보기 번호 1~4</td><td>Q12-3 → 12번 문항 ③번 보기의 근거</td></tr>
@@ -103,6 +103,13 @@ def _separator(doc, it: dict, project):
     else:
         ch = ""
     ans = {"ox": it["answer"], "short": it["answer"]}.get(it["type"], "①②③④"[int(it["answer"]) - 1] if it["type"] == "mcq" else "")
+    if it["type"] == "short" and it.get("short_variants"):
+        ans += f" (유사답변: {', '.join(it['short_variants'])})"
+    warn = ""
+    if it.get("status") == "manual":
+        warn = "<p class='ans'>※ 자동 검증 탈락(수동확인) 문항 — 검수 전</p>"
+    if not any(ev.get("match") for ev in it.get("evidence") or []):
+        warn += "<p class='ans'>※ 근거 미확인 — 원고에서 근거 문장을 찾지 못했다</p>"
     evs = []
     for ev in it.get("evidence") or []:
         m = ev.get("match")
@@ -115,7 +122,7 @@ def _separator(doc, it: dict, project):
         evs.append(f"<tr><td>{_e(lab)}</td><td class='{cls}'>{_e(ev['quote'])}{note}</td><td>{_e(where)}</td></tr>")
     _html_page(doc, f"""<h1>{_e(it['qlabel'])} · 문항 {_e(it['no'])}</h1>
       <p class="muted">{_e(it.get('chasi'))}차시 · {_e(type_name(it['type']))} · 난이도 {_e(it.get('difficulty'))} · 문항키 {_e(it['key'])}</p>
-      <h2>출처</h2><p>원고 p.{_e(pages)}</p>
+      {warn}<h2>출처</h2><p>원고 p.{_e(pages) or '확인 안 됨'}</p>
       <h2>발문</h2><div class="box">{_e(it['stem'])}{st}</div>
       {'<h2>보기</h2><div class="box">' + ch + '</div>' if ch else ''}
       <h2>정답</h2><p class="ans">{_e(ans)}</p>
@@ -184,7 +191,7 @@ def _page_header(page, text: str):
                         css=_css(), archive=_archive())
 
 
-_HEX = {True: "#f5c400", False: "#ff8a1f"}  # 참 진술 근거 / 함정 원문
+_HEX = {True: "#f5c400", False: "#2f6fe0"}  # 참 진술 근거 / 함정 원문
 
 
 def item_viewer_payload(project, item: dict) -> tuple[bytes, list[dict], list[str]]:
@@ -224,9 +231,10 @@ def render_item_page(project, item: dict, g: int, dpi: int = 110) -> bytes:
 
 
 def build(project, items_all: list[dict], out_path: Path, *, mode: str = "extract", draft: bool = False,
-          batch: int | None = None, chasi: int | None = None, title: str | None = None) -> dict:
+          batch: int | None = None, chasi: int | None = None, title: str | None = None, scope: str | None = None) -> dict:
     opts = project.meta.get("options", {})
-    items = numbering.number(numbering.select(items_all, draft=draft, batch=batch), opts.get("numbering", "continuous"))
+    items = numbering.number(numbering.select(items_all, draft=draft, batch=batch, scope=scope),
+                             opts.get("numbering", "continuous"))
     if chasi is not None:
         items = [it for it in items if it.get("chasi") == chasi]
     src = pymupdf.open(project.manuscript_path)

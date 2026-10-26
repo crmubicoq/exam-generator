@@ -400,3 +400,32 @@ def test_short_variants_drop_josa_only_duplicates():
     item = {"type": "short", "answer": "보장 리모델링", "short_variants": [],
             "validation": {"G5": {"accept_variants": ["보장리모델링을", "보험 리모델링"]}, "warnings": []}}
     assert review_llm.merge_variants(item) == ["보험 리모델링"]
+
+
+# ---------- 담당자 협의 반영(2026-10-26) ----------
+def test_export_scopes():
+    from exam_gen.output import numbering
+    items = [{"key": f"K{i}", "status": s, "type": "ox", "chasi": 1, "page": 0}
+             for i, s in enumerate(["approved", "auto_pass", "warn", "manual", "deleted", "prior"])]
+    assert {it["status"] for it in numbering.select(items, scope="all")} == {"approved", "auto_pass", "warn", "manual"}
+
+
+def test_short_answer_shows_similar_answers():
+    from exam_gen.output.excel import answer_cell, _scoring
+    it = {"type": "short", "answer": "장수 리스크", "short_variants": ["장수 위험"]}
+    assert answer_cell(it) == "장수 리스크 (유사답변: 장수 위험)"
+    assert "유사답변" in _scoring(it, {"scoring": "시스템 자동채점"})
+
+
+def test_mcq_positive_ratio_at_most_20pct_including_combo():
+    pages = [{"g": g, "chasi": 1, "chars": 1000, "excluded": False, "label": str(g)} for g in range(40)]
+    opts = {**criteria()["defaults"]}
+    slots = build_slots(pages, allocate(pages, 300), opts)
+    mcq = [s for s in slots if s["type"] == "mcq"]
+    pos = sum(1 for s in mcq if s.get("polarity") == "positive")
+    assert pos / len(mcq) <= 0.21 and any(s.get("combo") for s in mcq)
+
+
+def test_default_provider_is_claude_subscription():
+    from exam_gen.llm.settings import LLMSettings
+    assert LLMSettings().provider == "claude_agent_sdk"

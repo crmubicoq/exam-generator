@@ -82,7 +82,7 @@ with c2:
         ("유형", " · ".join(f"{ui.TYPE_KO[k]} {v}" for k, v in t.items())),
         ("선다형 정답 위치", " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in ap.items())),
         ("진위형 O / X", f"{r['ox']['O']} / {r['ox']['X']}"),
-        ("옳은 것 : 옳지 않은 것", f"{pol['positive']} : {pol['negative']}  (지침 20 : 80)"),
+        ("선다형 옳지 않은 것 : 옳은 것", f"{pol['negative']} : {pol['positive']}  (목표 8 : 2)"),
         ("근거 일치", f"원문 일치 L2 {r['evidence_levels']['L2']} · 부분 일치 L1 {r['evidence_levels']['L1']} · "
                      f"미매칭 {r['evidence_levels']['미매칭']}"),
         ("문항 없는 페이지", ", ".join(r["coverage"]["zero"]) or "없음"),

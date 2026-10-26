@@ -236,7 +236,7 @@ with right:
             elif saved["type"] == "ox":
                 st.markdown(f"정답 :green-badge[{saved['answer']}]")
             else:
-                alt = f" · 허용: {', '.join(saved['short_variants'])}" if saved.get("short_variants") else ""
+                alt = f" · 유사답변: {', '.join(saved['short_variants'])}" if saved.get("short_variants") else ""
                 st.markdown(f"정답 :green-badge[{saved['answer']}]{alt}")
         st.markdown("**해설**")
         st.markdown(saved.get("explanation", ""))
@@ -270,7 +270,7 @@ with right:
                 it["answer"] = c1.selectbox("정답", ["1", "2", "3", "4"], index=["1", "2", "3", "4"].index(str(it["answer"])))
             else:
                 it["answer"] = c1.text_input("정답", it["answer"])
-                v = c2.text_input("허용 정답({^} 구분)", "{^}".join(it.get("short_variants") or []))
+                v = c2.text_input("유사답변({^} 구분)", "{^}".join(it.get("short_variants") or []))
                 it["short_variants"] = [x.strip() for x in v.split("{^}") if x.strip()]
             it["explanation"] = st.text_area("해설", it.get("explanation", ""), height=90)
             st.markdown("**근거 인용문** (원고 문장을 그대로 — 저장 시 원고에서 다시 찾는다)")
@@ -307,7 +307,7 @@ with right:
         else:
             c1, c2 = st.columns([3, 2], vertical_alignment="center")
             c1.markdown(f"원고 p.{_pages_of(saved)} &nbsp; "
-                        f"{_chip('#f5c400', '참 진술 근거')} {_chip('#ff8a1f', '함정이 바꾼 원문')}",
+                        f"{_chip('#f5c400', '참 진술 근거')} {_chip('#2f6fe0', '함정이 바꾼 원문')}",
                         unsafe_allow_html=True)
             viewer = c2.toggle("PDF 뷰어(근거로 자동 이동)", value=pdf_viewer is not None, disabled=pdf_viewer is None,
                                help="끄면 페이지 이미지로 본다. 뷰어 표시가 이상하면 끄세요.")

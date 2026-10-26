@@ -52,7 +52,7 @@ with st.container(border=True):
     with st.expander("세부 옵션", icon=":material/settings:"):
         c1, c2, c3 = st.columns(3)
         pos = c1.number_input("선다형 '옳은 것 고르기' %", 0, 100, int(opts["mcq_positive_pct"]),
-                              help="지침: 옳은 것 20% / 옳지 않은 것 80%")
+                              help="지침·담당자 협의: 옳지 않은 것 80% / 옳은 것 20%")
         combo = c2.number_input("선다형 중 ㄱㄴㄷㄹ 조합형 %", 0, 100, int(opts["combo_pct"]))
         retries = c3.number_input("탈락 시 재출제 횟수", 0, 5, int(opts["max_retries"]))
         c1, c2, c3 = st.columns(3)
@@ -141,7 +141,10 @@ if n and not problems:
     _mix(c[2], "유형 구성", [(k, ui.TYPE_KO[k]) for k in C["type_order"]], sm["type"])
     s = llm_settings.load()
     pos_txt = " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in sorted(sm["answer"].items()) if k.isdigit())
-    st.caption(f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
+    pol = sm.get("polarity", {})
+    st.caption(f"**선다형 옳지 않은 것 : 옳은 것 = {pol.get('negative', 0)} : {pol.get('positive', 0)} "
+               f"(목표 8 : 2, 조합형은 옳은 것에 포함)** · "
+               f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
                f"조합형 {sm['combo']} · 유형별 난이도: 단답형은 하·중, 진위형은 상까지(상은 정답 X)")
     est = estimate(s, sm["total"])
     cost_txt = (f"구독 사용량에서 차감 (API로 환산하면 약 ${est['usd']})" if est["subscription"]

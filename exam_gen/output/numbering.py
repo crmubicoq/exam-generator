@@ -10,11 +10,22 @@ from .. import integrity
 from ..config import criteria
 
 
-def select(items: list[dict], draft: bool = False, batch: int | None = None) -> list[dict]:
-    """최종: 승인 + 현재 내용 검증·승인 해시 일치(integrity.is_exportable).
-    초안: 현재 내용이 G1~G6을 통과한 문항(승인 전 포함). 수동확인·재검증 대기 문항은 어느 쪽에도 들어가지 않는다."""
-    ok = integrity.is_draftable if draft else integrity.is_exportable
-    out = [it for it in items if ok(it)]
+# 출력 대상(담당자 협의 2026-10-23: 검수 없이도 출력 — 탈락 문항까지)
+SCOPES = {"all": "전체(검수 없이, 탈락 문항 포함)", "passed": "자동 검증 통과 문항", "approved": "승인한 문항만(납품 확정용)"}
+
+
+def select(items: list[dict], draft: bool = False, batch: int | None = None, scope: str | None = None) -> list[dict]:
+    """scope
+    - all: 삭제·기출을 뺀 모든 문항(자동통과·경고·수동확인·승인)
+    - passed: 현재 내용이 G1~G6을 통과한 문항(승인 전 포함)
+    - approved: 승인 + 현재 내용 검증·승인 해시 일치(integrity.is_exportable)
+    scope를 주지 않으면 예전 방식(draft → passed, 아니면 approved)."""
+    scope = scope or ("passed" if draft else "approved")
+    if scope == "all":
+        out = [it for it in items if it.get("status") not in ("deleted", "prior")]
+    else:
+        ok = integrity.is_draftable if scope == "passed" else integrity.is_exportable
+        out = [it for it in items if ok(it)]
     if batch is not None:
         out = [it for it in out if it.get("batch") == batch]
     return out

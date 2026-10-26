@@ -21,37 +21,38 @@ with st.container(border=True):
                                      ("수동확인", "manual"), ("삭제", "deleted")]):
         col.metric(label, c.get(key, 0))
     s1, s2 = st.columns([3, 2])
-    # 초안 여부에 따라 범위별 문항 수가 달라지므로 토글을 먼저 그린다(화면 배치는 오른쪽)
+    # 출력 대상에 따라 범위별 문항 수가 달라지므로 먼저 그린다(화면 배치는 오른쪽)
     with s2:
-        draft = st.toggle("초안 출력", value=False)
-        st.caption("**꺼짐(납품용)**: 사람이 승인한 문항만 출력합니다.  \n"
-                   "**켜짐(미리보기용)**: 승인 전 문항(자동통과·경고)도 넣고, 파일 이름과 엑셀 첫 줄에 '초안'을 표시합니다. "
-                   "수동확인·삭제 문항은 어느 경우에도 빠집니다.")
+        scope = st.radio("출력 대상", list(numbering.SCOPES), format_func=numbering.SCOPES.get, key="export_scope")
+        st.caption("**전체(검수 없이)**: 삭제한 문항만 빼고 모두 출력합니다. 자동 검증에서 탈락한 문항은 엑셀에 **연한 빨강 행**으로, "
+                   "근거PDF에는 '자동 검증 탈락'으로 표시됩니다.  \n"
+                   "**자동 검증 통과**: 탈락 문항을 뺍니다(엑셀 첫 줄에 '초안' 표시).  \n"
+                   "**승인한 문항만**: 검수 화면에서 사람이 승인한 문항만 — 최종 납품용입니다.")
     batches = p.batches()
     KIND = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제"}
-    unit = "출력 가능" if draft else "승인"
 
     def _scope_label(b):
-        n = len(numbering.select(items, draft=draft, batch=b))
+        n = len(numbering.select(items, batch=b, scope=scope))
         if b is None:
-            return f"전체 (모든 출제 회차) · {unit} {n}문항"
+            return f"전체 (모든 출제 회차) · {n}문항"
         info = batches[b - 1]
         day = (info.get("created") or "")[5:10].replace("-", "/")
-        return f"배치 {b} · {KIND.get(info['kind'], info['kind'])} · {day} · {unit} {n}문항"
+        return f"배치 {b} · {KIND.get(info['kind'], info['kind'])} · {day} · {n}문항"
 
     with s1:
         batch = st.selectbox("출력 범위", [None] + [b["batch"] for b in batches], format_func=_scope_label)
         st.caption("**배치**는 출제를 한 번 실행한 회차입니다(처음 출제 = 배치 1, 이후 추가 출제마다 2, 3 …). "
                    "보통은 **전체**를 고르고, 추가 출제분만 따로 납품할 때 해당 배치를 고릅니다.")
 
-sel = numbering.select(items, draft=draft, batch=batch)
+sel = numbering.select(items, batch=batch, scope=scope)
 if not sel:
-    st.warning("출력할 문항이 없습니다. " + ("검수 화면에서 승인하거나 '초안 출력'을 켜세요." if not draft else ""))
+    st.warning("출력할 문항이 없습니다. " + ("검수 화면에서 승인하거나 출력 대상을 바꾸세요." if scope == "approved" else ""))
     st.stop()
-st.markdown(f"**출력 대상 {len(sel)}문항**" + (" · 초안" if draft else ""))
+n_manual = sum(1 for it in sel if it.get("status") == "manual")
+st.markdown(f"**출력 대상 {len(sel)}문항**" + (f" · 자동 검증 탈락 {n_manual}문항 포함" if n_manual else ""))
 stamp = datetime.now().strftime("%Y%m%d_%H%M")
 base = p.dir / "exports"
-tag = ("초안_" if draft else "") + (f"배치{batch}_" if batch else "")
+tag = {"all": "검수전_", "passed": "초안_", "approved": ""}[scope] + (f"배치{batch}_" if batch else "")
 
 
 def _name(path: str) -> str:
@@ -83,7 +84,7 @@ with k1.container(border=True, height="stretch"):
     act = st.container(key="export_act_xlsx")
     if act.button("엑셀 만들기", type="primary", icon=":material/play_arrow:", width="stretch"):
         with st.spinner("엑셀 작성 중…"):
-            r = excel.write(p, items, base / f"{tag}평가문항_{stamp}.xlsx", draft=draft, batch=batch)
+            r = excel.write(p, items, base / f"{tag}평가문항_{stamp}.xlsx", batch=batch, scope=scope)
         res["xlsx"] = r
     if res.get("xlsx"):
         path = res["xlsx"]["path"]
@@ -103,7 +104,7 @@ with k2.container(border=True, height="stretch"):
         with st.spinner("근거PDF 작성 중…"):
             for ch in (sorted({it.get("chasi") for it in sel}) if split else [None]):
                 name = f"{tag}근거PDF_추출본{'_' + str(ch) + '차시' if ch else ''}_{stamp}.pdf"
-                outs.append(evidence_pdf.build(p, items, base / name, mode="extract", draft=draft, batch=batch, chasi=ch))
+                outs.append(evidence_pdf.build(p, items, base / name, mode="extract", batch=batch, chasi=ch, scope=scope))
         res["extract"] = outs
     with act:
         _show_pdfs("extract")
@@ -118,7 +119,7 @@ with k3.container(border=True, height="stretch"):
     if act.button("전체 표시본 만들기", type="primary", icon=":material/play_arrow:", width="stretch"):
         with st.spinner("근거PDF 작성 중…"):
             res["overview"] = [evidence_pdf.build(p, items, base / f"{tag}근거PDF_원고전체_{stamp}.pdf",
-                                                  mode="overview", draft=draft, batch=batch)]
+                                                  mode="overview", batch=batch, scope=scope)]
     with act:
         _show_pdfs("overview")
 

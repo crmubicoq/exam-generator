@@ -495,3 +495,88 @@ def test_prior_items_ai_extract_with_mock():
 def LLMClient_mock():
     from exam_gen.llm.client import LLMClient
     return LLMClient(MOCK)
+
+
+# ---------- 원고 업데이트(판 교체) ----------
+def _edit_pdf(src, dst, edits, insert_blank_front=False):
+    """edits: [(page_idx, line_bbox, new_text or None)] — 줄을 지우고(None) 또는 새 글로 바꾼다."""
+    d = pymupdf.open(src)
+    for idx, bbox, text in edits:
+        pg = d[idx]
+        pg.add_redact_annot(pymupdf.Rect(bbox))
+        pg.apply_redactions()
+        if text:
+            pg.insert_text((bbox[0], bbox[3] - 2), text, fontname="korea", fontsize=9)
+    if insert_blank_front:
+        d.insert_page(0)
+    d.save(dst)
+
+
+def _first_line(p, it):
+    """정답 근거의 첫 줄과, 그 줄 안에서 근거 인용문이 시작하는 글자(바꿀 위치)."""
+    for ev in it["evidence"]:
+        m = ev.get("match")
+        if m and ev.get("is_true") and m["level"] == "L2":
+            pg = p.pages[m["g"]]
+            ln = next(l for l in pg["lines"] if l["no"] == m["lines"][0])
+            head = ev["quote"].strip()[:4]
+            if head and head in ln["text"]:
+                return pg["idx"], {**ln, "head": head}
+    return None
+
+
+def _changed(ln, word):
+    return ln["text"].replace(ln["head"], word, 1)
+
+
+def test_manuscript_replace_flags_only_changed_items_without_llm(tmp_path, monkeypatch):
+    from exam_gen import manuscript_update as MU
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.llm.client import LLMClient
+    from exam_gen.store import Project
+    p = Project.create("원고 교체 테스트", "모의")
+    sid = p.add_source(SAMPLE_PDF)["id"]
+    p.set_page_map(sid, 17, "printed", True)
+    opts = dict(criteria()["defaults"])
+    start_batch(p, LLMSettings(provider="mock", workers=1),
+                build_slots(p.pages, {1: 2, 3: 2, 5: 2, 7: 2}, opts), opts, background=False)
+    ok = [it for it in p.items() if it["status"] in ("auto_pass", "warn") and _first_line(p, it)]
+    assert len(ok) >= 3
+    a, b, c = ok[0], next(x for x in ok if x["page"] != ok[0]["page"]), ok[-1]
+    (ia, la), (ib, lb) = _first_line(p, a), _first_line(p, b)
+    v2 = tmp_path / "v2.pdf"
+    _edit_pdf(SAMPLE_PDF, v2, [(ia, la["bbox"], _changed(la, "변경된 내용")), (ib, lb["bbox"], None)],
+              insert_blank_front=True)
+    before = {it["key"]: (it["page"], p.pages[it["page"]]["label"]) for it in p.items()}
+
+    def no_llm(*a, **k):
+        raise AssertionError("원고 교체에서 AI를 부르면 안 된다")
+    monkeypatch.setattr(LLMClient, "structured", no_llm)
+    rep = MU.replace_source(p, sid, v2)
+    monkeypatch.undo()
+    assert rep["version"] == 2 and rep["pages_new"] == rep["pages_old"] + 1
+    flagged = {it["key"]: it["validation"]["ms_change"] for it in MU.flagged_items(p)}
+    assert a["key"] in flagged and flagged[a["key"]]["kind"] == "changed" and b["key"] in flagged
+    for it in p.items():
+        if it["key"] not in flagged and it["status"] != "deleted":
+            # 쪽이 하나 밀려도(앞에 빈 쪽) 인쇄 쪽수는 그대로, 전역 쪽 번호는 +1
+            assert it["page"] == before[it["key"]][0] + 1 and p.pages[it["page"]]["label"] == before[it["key"]][1]
+            assert it.get("manuscript_version") == 2
+    est = MU.estimate(MU.flagged_items(p))
+    assert est["calls"] > 0 and est["revise"] >= 1
+    # 일괄 처리(모의): 문항 키 유지, 고치기 전 내용 보관
+    MU.start_revise(p, LLMSettings(provider="mock", workers=1), [a["key"]], background=False)
+    na = p.item(a["key"])
+    assert na["status"] in ("auto_pass", "warn") and not na["validation"].get("ms_change")
+    assert na["manuscript_version"] == 2 and na["history"][-1]["action"].startswith("manuscript_")
+    assert na["original"]["stem"] == a["stem"]
+    # 3판: 다른 문항 하나만 바뀌면 그 문항만 새로 표시된다(이미 고친 a는 다시 표시되지 않음)
+    c = next(x for x in (p.item(o["key"]) for o in ok) if x["key"] not in (a["key"], b["key"])
+             and x["status"] in ("auto_pass", "warn") and _first_line(p, x))
+    ic, lc = _first_line(p, c)
+    v3 = tmp_path / "v3.pdf"
+    _edit_pdf(p.dir / "pdf" / f"{sid}.pdf", v3, [(ic, lc["bbox"], _changed(lc, "수정된 내용"))])
+    rep3 = MU.replace_source(p, sid, v3)
+    f3 = {it["key"]: it["validation"]["ms_change"] for it in MU.flagged_items(p)}
+    assert rep3["version"] == 3 and c["key"] in f3 and f3[c["key"]]["version"] == 3
+    assert a["key"] not in f3 and b["key"] in f3  # 처리하지 않은 b는 표시가 남는다

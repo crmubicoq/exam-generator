@@ -22,7 +22,7 @@ PAGE_SIZE = 50          # 목록 한 쪽에 담는 문항 수
 LIST_H = 660            # 왼쪽 목록 상자 높이(px) — 안에서만 스크롤
 BODY_H = 480            # 오른쪽 문항 본문 상자 높이(px)
 CIRCLED = "①②③④"
-QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "auto": ("자동통과", ("auto_pass",)),
+QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경", ()), "auto": ("자동통과", ("auto_pass",)),
           "done": ("승인", ("approved",)), "del": ("삭제", ("deleted",)),
           "all": ("전체", ("manual", "warn", "auto_pass", "approved", "deleted"))}
 _ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:material/task_alt:]",
@@ -76,9 +76,15 @@ active = len(items) - cnt.get("deleted", 0)
 st.progress(cnt.get("approved", 0) / active if active else 0.0,
             text=f"검수 진행 — 승인 {cnt.get('approved', 0)} / {active}문항 (삭제 제외)")
 q1, q2 = st.columns([4, 1], vertical_alignment="center")
+def _in_queue(it, q):
+    if q == "ms":  # 원고를 새 판으로 바꾼 뒤 근거 문장이 바뀌거나 사라진 문항
+        return bool((it.get("validation") or {}).get("ms_change")) and it["status"] != "deleted"
+    return it["status"] in QUEUES[q][1]
+
+
 queue = q1.segmented_control(
     "검수 대기열", list(QUEUES), default="todo", key="review_queue", label_visibility="collapsed",
-    format_func=lambda k: f"{QUEUES[k][0]} {sum(cnt.get(s, 0) for s in QUEUES[k][1])}") or "todo"
+    format_func=lambda k: f"{QUEUES[k][0]} {sum(1 for it in items if _in_queue(it, k))}") or "todo"
 with q2.popover("상세 필터", icon=":material/filter_list:", width="stretch"):
     f_type = st.multiselect("유형", list(ui.TYPE_KO), format_func=lambda t: ui.TYPE_KO[t])
     f_diff = st.multiselect("난이도", ["최상", "상", "중", "하"])
@@ -86,7 +92,7 @@ with q2.popover("상세 필터", icon=":material/filter_list:", width="stretch")
     f_page = st.multiselect("책 쪽수", [x["label"] for x in pages])
     f_text = st.text_input("검색(발문·키)")
 view = [it for it in items
-        if it["status"] in QUEUES[queue][1] and (not f_type or it["type"] in f_type)
+        if _in_queue(it, queue) and (not f_type or it["type"] in f_type)
         and (not f_diff or it["difficulty"] in f_diff) and (not f_chasi or it.get("chasi") in f_chasi)
         and (not f_page or _label(it) in f_page)
         and (not f_text or f_text in it.get("stem", "") or f_text == it["key"])]
@@ -171,6 +177,22 @@ with right:
     st.caption(f"{saved.get('chasi')}차시 · {kind} · 난이도 {diff_txt} · 원고 p.{_pages_of(saved)} · "
                f"근거 {saved.get('evidence_level') or '없음'} · 시도 {saved['validation'].get('attempts')} · "
                f"생성 {saved['gen'].get('provider')}")
+
+    # --- 원고 변경 표시 ---
+    ms = saved["validation"].get("ms_change")
+    if ms:
+        from exam_gen import manuscript_update as MU
+        with st.container(border=True):
+            st.markdown(f"**:orange[:material/edit_document:] 원고 {ms['version']}판에서 근거가 {MU.FLAG_KO[ms['kind']]}되었습니다**")
+            for d in ms["details"]:
+                st.markdown(f"- 이전: “{d['old']}”  \n  → 새 원고: " + (f"“{d['new']}”" if d["new"] else ":red[삭제됨]"))
+            if ms.get("ai_failed"):
+                st.warning("AI 수정이 검증을 통과하지 못했습니다. 직접 고치거나 삭제하세요.", icon=":material/warning:")
+            mode = "AI 수정(바뀐 부분만)" if ms["kind"] == "changed" else "재출제(같은 조건)"
+            if st.button(f"이 문항만 {mode} — 예상 AI 호출 약 {MU.CALLS[ms['kind']]}회", key=f"ms_fix_{saved['key']}",
+                         icon=":material/auto_fix_high:", help="문항 번호는 그대로 두고, 고친 칸은 엑셀 검수용 시트에 노란색으로 표시됩니다."):
+                MU.start_revise(p, llm_settings.load(), [saved["key"]])
+                st.switch_page("app_pages/progress.py")
 
     # --- 승인·삭제 (항상 보이게) ---
     with st.container(border=True):

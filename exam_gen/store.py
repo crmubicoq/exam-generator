@@ -273,16 +273,27 @@ class Project:
                 n += 1
         return n
 
-    def rebuild_manuscript(self) -> int:
+    def rebuild_manuscript(self, idx_map: dict | None = None, relocate: str | None = None) -> int:
         """원고 PDF를 이어 붙이고 pages.json을 다시 만든다. 기존 페이지의 차시·제외 설정은 유지한다.
-        기존 문항의 페이지·근거 위치를 (원고 ID, 원고 내 페이지) 기준으로 다시 연결한다. 반환: 무효화된 문항 수."""
+        기존 문항의 페이지·근거 위치를 (원고 ID, 원고 내 페이지) 기준으로 다시 연결한다. 반환: 무효화된 문항 수.
+        idx_map: 원고를 새 판으로 교체할 때 {원고ID: {이전 쪽 idx: 새 쪽 idx}} (쪽이 밀리거나 당겨진 것을 따라감)
+        relocate: 새 판으로 교체한 원고 ID — 이 원고를 근거로 쓰는 문항은 근거 문장을 새 판에서 다시 찾는다."""
         meta = self.meta
+        idx_map = idx_map or {}
         old_pages = list(self.pages) if (self.dir / "pages.json").exists() else []
-        old = {(p["src"], p["idx"]): p for p in old_pages}
+        old = {}
+        for p in old_pages:
+            if p["src"] in idx_map:
+                ni = idx_map[p["src"]].get(p["idx"])
+                if ni is not None:
+                    old[(p["src"], ni)] = p
+            else:
+                old[(p["src"], p["idx"])] = p
         out = pymupdf.open()
         pages = []
         min_chars = criteria()["thresholds"]["min_page_chars"]
         for s in meta["sources"]:
+            last_chasi = s.get("chasi", 1)
             doc = pymupdf.open(self.dir / s["pdf"])
             out.insert_pdf(doc)
             alt_path = self.dir / "pdf" / f"{s['id']}_slides.json"
@@ -301,44 +312,66 @@ class Project:
                 pages.append({
                     "g": len(pages), "src": s["id"], "idx": idx,
                     "label": self.label_for(s, idx),
-                    "chasi": prev["chasi"] if prev else s.get("chasi", 1),
+                    # 새 판에 새로 생긴 쪽은 바로 앞 쪽의 차시를 따른다
+                    "chasi": prev["chasi"] if prev else last_chasi,
                     "excluded": prev["excluded"] if prev else auto_excl,
                     "chars": chars, "lines": lines,
                     "alt_text": alt[idx] if idx < len(alt) else None,
                     "size": [round(page.rect.width, 1), round(page.rect.height, 1)],
                 })
+                last_chasi = pages[-1]["chasi"]
             doc.close()
         if len(out):
             out.save(self.dir / "manuscript.pdf", garbage=3, deflate=True)
         out.close()
         _atomic_write(self.dir / "pages.json", json.dumps(pages, ensure_ascii=False))
         self._pages_cache = None
-        return self._remap(old_pages) if old_pages else 0
+        return self._remap(old_pages, idx_map, relocate) if old_pages else 0
 
-    def _remap(self, old_pages: list[dict]) -> int:
+    def _remap(self, old_pages: list[dict], idx_map: dict | None = None, relocate: str | None = None) -> int:
         """전역 페이지 번호(g)가 바뀐 뒤 문항·배치 슬롯을 새 번호로 옮긴다 (Codex C5).
-        근거 원고가 사라진 문항은 근거·검증·승인을 무효화하고 '수동 확인'으로 돌린다."""
+        근거 원고가 사라진 문항은 근거·검증·승인을 무효화하고 '수동 확인'으로 돌린다.
+        relocate 원고를 근거로 쓰는 문항은 근거 문장을 새 판에서 다시 찾는다(manuscript_update.relocate_item)."""
+        idx_map = idx_map or {}
         new_g = {(p["src"], p["idx"]): p["g"] for p in self.pages}
-        old_key = {p["g"]: (p["src"], p["idx"]) for p in old_pages}
+        old_key = {}
+        for p in old_pages:
+            if p["src"] in idx_map:
+                ni = idx_map[p["src"]].get(p["idx"])
+                old_key[p["g"]] = (p["src"], ni) if ni is not None else None
+            else:
+                old_key[p["g"]] = (p["src"], p["idx"])
+        old_src = {p["g"]: p["src"] for p in old_pages}
         labels = {p["g"]: p["label"] for p in self.pages}
 
         def remap(g):
             return new_g.get(old_key.get(g)) if g is not None else None
 
         lost_n = 0
-        for it in self.items():
+        for it in self.items(status=["approved", "auto_pass", "warn", "manual", "deleted", "prior"]):
             before = json.dumps(it, ensure_ascii=False, sort_keys=True)
+            touches = relocate and (old_src.get(it.get("page")) == relocate or any(
+                old_src.get((e.get("match") or {}).get("g")) == relocate for e in it.get("evidence") or []))
+            if touches and it.get("status") not in ("deleted", "prior"):
+                from .manuscript_update import relocate_item
+                if relocate_item(self, it, remap):
+                    lost_n += 1
+                if json.dumps(it, ensure_ascii=False, sort_keys=True) != before:
+                    self.save_item(it, "manuscript_relocate", {"flag": (it["validation"].get("ms_change") or {}).get("kind")})
+                continue
             lost = []
             ng = remap(it.get("page"))
             if ng is None:
                 if it.get("page") is not None:
                     lost.append("출제 페이지")
                 it["page"] = None  # 삭제된 원고의 페이지 번호가 다른 원고를 가리키지 않도록 비운다
-                it["slot"]["page"] = None
+                if it.get("slot"):
+                    it["slot"]["page"] = None
             else:
                 it["page"] = ng
-                it["slot"]["page"] = ng
-                it["slot"]["label"] = labels[ng]
+                if it.get("slot"):
+                    it["slot"]["page"] = ng
+                    it["slot"]["label"] = labels[ng]
             for ev in it.get("evidence") or []:
                 m = ev.get("match")
                 if not m:
@@ -350,7 +383,7 @@ class Project:
                 else:
                     m["g"], m["label"] = mg, labels[mg]
             it["source_pages"] = sorted({e["match"]["g"] for e in it.get("evidence") or [] if e.get("match")})
-            if lost and it.get("status") != "deleted":
+            if lost and it.get("status") not in ("deleted", "prior"):
                 lost_n += 1
                 v = it.setdefault("validation", {})
                 v["fails"] = list(v.get("fails") or []) + [f"원고 변경: {', '.join(lost)}의 원고가 삭제·교체됨 — 근거 재확인 필요"]

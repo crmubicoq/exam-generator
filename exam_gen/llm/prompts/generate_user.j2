@@ -29,6 +29,16 @@
 # 슬롯 명세 ({{ slots|length }}개 — 모두 출제)
 {% for s in slots %}- {{ s.sid }}: {{ s.spec }}
 {% endfor %}
+{% if revise %}
+# 원고 변경으로 다시 만드는 슬롯 (아래 슬롯은 기존 문항을 새 원고에 맞춘다)
+{% for r in revise %}## {{ r.sid }} — {% if r.mode == "revise" %}수정: 바뀐 부분만 고친다{% else %}재출제: 다룰 내용이 원고에서 사라져 같은 조건으로 새로 출제한다{% endif %}
+### 기존 문항
+{{ r.old }}
+### 원고 변경 내용({{ r.version }}판)
+{% for c in r.changes %}- 이전 원고: "{{ c.old }}"
+  → 새 원고: {% if c.new %}"{{ c.new }}"{% else %}(삭제됨){% endif %}
+{% endfor %}
+{% endfor %}{% endif %}
 {% if avoid %}
 # 회피 목록 (이미 출제된 문항 — 같은 판단 포인트·같은 문장 금지)
 {% for a in avoid %}- {{ a }}

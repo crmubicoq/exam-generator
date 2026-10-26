@@ -36,6 +36,52 @@ if not meta["sources"]:
     st.info("원고를 업로드하세요.")
     st.stop()
 
+# ---------- 원고 새 판으로 교체 ----------
+from exam_gen import manuscript_update as MU  # noqa: E402
+from exam_gen.llm import settings as llm_settings  # noqa: E402
+
+with st.expander("원고 수정본이 왔을 때 — 새 판으로 교체", icon=":material/published_with_changes:",
+                 expanded=bool(MU.flagged_items(p))):
+    st.caption("수정된 원고를 올리면 **쪽수와 근거 위치를 자동으로 다시 맞추고**, 근거 문장이 바뀌거나 사라진 문항만 "
+               "'원고 변경'으로 표시합니다. 이 단계는 **AI를 쓰지 않습니다**. 원고가 더 바뀌지 않을 때 아래 '변경 문항 일괄 처리'를 "
+               "누르면 그때 AI로 고칩니다(바로 전 판과만 비교하므로 이미 고친 문항은 다시 표시되지 않습니다).")
+    for s in meta["sources"]:
+        c1, c2, c3 = st.columns([3, 3, 1.4], vertical_alignment="bottom")
+        c1.markdown(f"**{s['filename']}** · 현재 **{s.get('version', 1)}판** · {s['pages']}쪽")
+        newf = c2.file_uploader("새 판 파일", type=["pdf", "pptx", "docx", "hwp", "hwpx", "ppt", "doc"],
+                                key=f"newver_{s['id']}", label_visibility="collapsed")
+        if c3.button("새 판으로 교체", key=f"replace_{s['id']}", disabled=newf is None, type="primary", width="stretch"):
+            with tempfile.TemporaryDirectory() as td, st.spinner("새 판을 비교하는 중… (AI 사용 없음)"):
+                fp = Path(td) / newf.name
+                fp.write_bytes(newf.getvalue())
+                try:
+                    st.session_state["ms_report"] = MU.replace_source(p, s["id"], fp, newf.name)
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"교체하지 못했습니다: {e}")
+            st.rerun()
+    rep = MU.last_report(p)
+    if rep:
+        st.markdown(f"**최근 교체: {rep['filename']} → {rep['version']}판** ({rep['at'][:16].replace('T', ' ')})")
+        st.write(f"쪽 {rep['pages_old']} → {rep['pages_new']} · 내용이 바뀐 쪽 {len(rep['changed_pages'])} · "
+                 f"사라진 쪽 {len(rep['deleted_pages'])} · 새로 생긴 쪽 {len(rep['added_pages'])} · "
+                 f"원고 변경 문항: 내용 변경 {rep['items_changed']} · 내용 삭제 {rep['items_removed']}")
+        if rep.get("page_map_reconfirm"):
+            st.warning("새 판의 쪽수 매핑이 달라졌습니다. 아래 '책 쪽수 매핑 확인'에서 다시 확정하세요.", icon=":material/warning:")
+        if rep["added_pages"]:
+            st.caption(f"새로 생긴 쪽 {', '.join(rep['added_pages'][:15])} — 필요하면 '출제 옵션 → 페이지 재출제'로 추가 출제하세요.")
+    flagged = MU.flagged_items(p)
+    if flagged:
+        est = MU.estimate(flagged)
+        st.markdown(f"#### 변경 문항 {len(flagged)}개 일괄 처리")
+        st.info(f"AI 수정 {est['revise']}개(바뀐 부분만) + 재출제 {est['regenerate']}개(내용이 사라진 문항) · "
+                f"예상 AI 호출 약 {est['calls']}회 · 약 {est['minutes']}분. 문항 번호는 그대로 유지되고, 고친 칸은 엑셀 "
+                "검수용 시트에 노란색으로 표시됩니다. 문항별로 처리하려면 검수 화면의 '원고 변경' 대기열을 쓰세요.",
+                icon=":material/auto_fix_high:")
+        if st.checkbox("원고가 확정되었습니다 — 변경 문항을 지금 AI로 처리합니다", key="ms_confirm"):
+            if st.button("변경 문항 일괄 처리 시작", type="primary", icon=":material/play_arrow:"):
+                MU.start_revise(p, llm_settings.load(), [it["key"] for it in flagged])
+                st.switch_page("app_pages/progress.py")
+
 # ---------- 쪽수 매핑 ----------
 st.subheader(":material/format_list_numbered: 책 쪽수 매핑 확인")
 st.caption("엑셀 'PPT' 열과 근거PDF에는 원고에 인쇄된 쪽수를 쓴다. 자동 감지 결과를 원본 이미지와 비교해 확인하세요. "

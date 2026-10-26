@@ -243,6 +243,17 @@ class Pipeline:
             if item is None:
                 self.p.log("slot_missing", {"sid": s["sid"], "page": g}, batch=self.batch)
                 continue
+            if s.get("revise_of"):
+                old = self.p.item(s["revise_of"])
+                if old:
+                    ms = old["validation"].get("ms_change") or {}
+                    ms["ai_failed"] = {"at": now(), "mode": s["revise"]["mode"],
+                                       "fails": item["validation"]["fails"][:5]}
+                    old["validation"]["ms_change"] = ms
+                    self.p.save_item(old, "manuscript_revise_failed", {"fails": item["validation"]["fails"][:5]})
+                with self.lock:
+                    self.prog["manual"] += 1
+                continue
             item["status"] = "manual"
             self.p.save_item(item, "auto_manual", {"fails": item["validation"]["fails"]})
             with self.lock:
@@ -270,7 +281,8 @@ class Pipeline:
                           next_text=_head(self.p.page_text(next_g)) if next_g is not None else "",
                           slots=[{"sid": s["sid"], "spec": slot_spec(s)} for s in chunk],
                           related=_related(self.p, g) if any(s["difficulty"] in HARD for s in chunk) else [],
-                          avoid=avoid, feedback=fb)
+                          avoid=avoid, feedback=fb,
+                          revise=[{"sid": s["sid"], **s["revise"]} for s in chunk if s.get("revise")])
             system = render("generate_system.j2", rubric=criteria()["difficulty_rubric"])
             res = self.client.structured(system, user, schema.gen_schema(len(chunk)),
                                          model=self.s.model_generate, task="generate",
@@ -382,7 +394,8 @@ class Pipeline:
         out = []
         for item, s in keep2:
             with self.lock:
-                f, w, best = dedup.check(item, self.existing)
+                others = [e for e in self.existing if not s.get("revise_of") or e.get("key") != s["revise_of"]]
+                f, w, best = dedup.check(item, others)
                 item["validation"]["G6"] = best
                 item["validation"]["warnings"] += w
                 if not f:
@@ -420,6 +433,20 @@ class Pipeline:
         review_llm.merge_variants(item)  # 단답형 허용 답안(G5 제안) — 검증 기록 전에 합쳐 내용 해시에 포함
         integrity.mark_verified(item)  # 현재 내용 해시에 G1~G6 통과를 기록
         item["original"] = _snapshot(item)
+        rev = item["slot"].get("revise")
+        if item["slot"].get("revise_of"):
+            # 원고 변경 반영: 원래 문항 키(번호)를 유지하고, 고치기 전 내용을 original로 남겨 엑셀 검수용 시트에서
+            # 바뀐 칸만 노란 칸·빨간 글씨로 보이게 한다
+            old = self.p.item(item["slot"]["revise_of"]) or {}
+            item["key"] = item["slot"]["revise_of"]
+            item["created"] = old.get("created")
+            item["original"] = _snapshot(old)
+            item["history"] = list(old.get("history") or []) + [
+                {"at": now(), "action": "manuscript_" + rev["mode"], "note": f"원고 {rev['version']}판 반영",
+                 "before": _snapshot(old)}]
+            item["manuscript_version"] = rev["version"]
+            item["validation"]["warnings"].append(
+                f"원고 {rev['version']}판 반영: {'AI 수정' if rev['mode'] == 'revise' else '재출제'} — 바뀐 부분을 확인하세요")
         self.p.save_item(item, "auto_accept", {"status": item["status"], "attempts": item["validation"]["attempts"]})
         with self.lock:
             self.prog["accepted"] += 1

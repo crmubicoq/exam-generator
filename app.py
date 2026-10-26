@@ -12,6 +12,7 @@ PAGES = {
     "시작": [st.Page("app_pages/home.py", title="홈", icon=":material/home:", default=True),
              st.Page("app_pages/projects.py", title="프로젝트 관리", icon=":material/folder_managed:")],
     "준비": [st.Page("app_pages/register.py", title="원고 등록", icon=":material/upload_file:"),
+             st.Page("app_pages/prior.py", title="기출문제 등록", icon=":material/history_edu:"),
              st.Page("app_pages/options.py", title="출제 옵션", icon=":material/tune:")],
     "출제": [st.Page("app_pages/progress.py", title="출제 진행", icon=":material/autorenew:")],
     "검수·출력": [st.Page("app_pages/quality.py", title="품질 리포트", icon=":material/analytics:"),

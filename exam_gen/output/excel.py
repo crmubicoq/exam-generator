@@ -205,7 +205,7 @@ def _report(ws, project, items_all, final):
     opts = {**criteria()["defaults"], **project.meta.get("options", {})}
     n = len(final) or 1
     rows.append(["난이도", "목표 %", "실제 수", "실제 %"])
-    dc = Counter(it["difficulty"] for it in final)
+    dc = Counter(it.get("difficulty") for it in final)
     for d in criteria()["difficulty_levels"]:
         rows.append([d, opts["difficulty_pct"].get(d, 0), dc.get(d, 0), round(dc.get(d, 0) * 100 / n, 1)])
     rows.append([])

@@ -216,6 +216,9 @@ class Project:
                             "slots": len(b.get("slots") or []), "status": b.get("status"),
                             "providers": ", ".join(u.get("by_provider") or {}) or "-", "calls": u.get("calls"),
                             "minutes": minutes, "accepted": s.get("accepted"), "manual": s.get("manual")})
+        n_prior = len(self.items(status=["prior"]))
+        if n_prior:
+            status["prior"] = n_prior
         return {"slug": self.slug, "name": meta.get("name", self.slug), "created": meta.get("created", ""),
                 "updated": last, "sources": [(s.get("filename"), s.get("pages")) for s in meta.get("sources", [])],
                 "pages": len(self.pages), "items": len(items), "status": status, "batches": batches, "models": models}
@@ -504,16 +507,27 @@ class Project:
                       (now(), key, batch, kind, json.dumps(detail, ensure_ascii=False)))
 
     def items(self, status: list[str] | None = None, batch: int | None = None) -> list[dict]:
+        """출제 문항 목록. 기출(prior)은 status에 'prior'를 넣었을 때만 포함한다(검수·출력·통계에서 자동 제외)."""
         q, args = "SELECT data FROM items WHERE 1=1", []
         if status:
             q += f" AND status IN ({','.join('?' * len(status))})"
             args += status
+        else:
+            q += " AND status != 'prior'"
         if batch is not None:
             q += " AND batch=?"
             args.append(batch)
         q += " ORDER BY key"
         with self._conn() as c:
             return [json.loads(r[0]) for r in c.execute(q, args).fetchall()]
+
+    def delete_items(self, keys: list[str]):
+        """문항 행을 지운다(기출 정리용). 출제 문항은 상태를 'deleted'로 바꾸는 set_status를 쓴다."""
+        if not keys:
+            return
+        with _LOCK, self._conn() as c:
+            c.execute(f"DELETE FROM items WHERE key IN ({','.join('?' * len(keys))})", keys)
+        self.log("items_deleted", {"keys": keys[:50], "n": len(keys)})
 
     def item(self, key: str) -> dict | None:
         with self._conn() as c:

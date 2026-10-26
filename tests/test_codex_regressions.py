@@ -15,6 +15,7 @@ from exam_gen.plan.slots import SlotError, build_slots
 from exam_gen.validate import dedup, evidence, review_llm, rules, schema, solver
 
 MOCK = LLMSettings(provider="mock", workers=1)
+SAMPLE_PDF = __import__("pathlib").Path(__file__).resolve().parents[1] / "input_17-43.pdf"
 ORIG = "이 시기 고객은 대체로 소득의 정점을 경험하지만, 정년이 가까워질수록 소득 안정성은 낮아진다."
 
 
@@ -452,3 +453,45 @@ def test_project_naming_rename_delete_restore():
     store.delete_project(slug)
     store.purge_trash([t for t in store.list_trash() if t["slug"] == slug][0]["dir"])
     assert not [t for t in store.list_trash() if t["slug"] == slug]
+
+
+def test_prior_items_template_roundtrip_and_dedup(sample_project, tmp_path):
+    from exam_gen.ingest import prior_items as P
+    from exam_gen.output import excel
+    from exam_gen.store import Project
+    p = Project.create("기출 테스트", "모의")
+    p.add_source(SAMPLE_PDF)
+    p.set_page_map(p.meta["sources"][0]["id"], 17, "printed", True)
+    items = [{"key": "K00001", "status": "warn", "type": "ox", "chasi": 1, "page": 0, "source_pages": [0],
+              "stem": "은퇴 준비기 고객은 노후 자금 마련이 중요한 과제이다.", "answer": "X", "explanation": "틀린 설명이다.",
+              "evidence": [], "validation": {"warnings": [], "fails": []}},
+             {"key": "K00002", "status": "warn", "type": "short", "chasi": 1, "page": 1, "source_pages": [1],
+              "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [( ) 리스크]", "answer": "장수",
+              "short_variants": ["장수 위험"], "explanation": "정답은 장수이다.", "evidence": [],
+              "validation": {"warnings": [], "fails": []}}]
+    out = tmp_path / "prior.xlsx"
+    excel.write(p, items, out, scope="all")
+    assert P.is_template_excel(out)
+    got = P.parse_template_excel(out)
+    assert [(g["type"], g["answer"]) for g in got] == [("ox", "X"), ("short", "장수")]
+    assert got[1]["short_variants"] == ["장수 위험"]
+    assert P.save(p, got, "prior.xlsx") == 2 and P.save(p, got, "prior.xlsx") == 0  # 같은 발문은 한 번만
+    assert p.items() == [] and len(p.items(status=["prior"])) == 2
+    # 추가 출제의 중복 검사(G6)에 기출이 들어간다
+    from exam_gen import review_ops
+    new = {**got[0], "key": "K00009", "status": "warn", "statements": [], "choices": [], "key_point": got[0]["stem"],
+           "evidence": [], "validation": {"warnings": [], "fails": []}}
+    from exam_gen.validate import dedup
+    f, _, _ = dedup.check(new, p.items(status=list(review_ops.ACCEPTED)))
+    assert f, "기출과 같은 문항이 G6에서 막혀야 한다"
+
+
+def test_prior_items_ai_extract_with_mock():
+    from exam_gen.ingest import prior_items as P
+    out = P.ai_extract(LLMClient_mock(), MOCK, "안내문\n1. 문제: 지연이체는 창구 거래에 적용되지 않는다.\n")
+    assert out and out[0]["type"] == "ox" and "지연이체" in out[0]["stem"]
+
+
+def LLMClient_mock():
+    from exam_gen.llm.client import LLMClient
+    return LLMClient(MOCK)

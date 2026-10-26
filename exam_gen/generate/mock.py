@@ -42,7 +42,17 @@ def _alter(s: str) -> tuple[str, str] | None:
 
 
 def respond(task: str, ctx: dict) -> dict:
-    return {"generate": _generate, "solve": _solve, "review": _review, "pool": _pool}[task](ctx)
+    return {"generate": _generate, "solve": _solve, "review": _review, "pool": _pool, "prior": _prior}[task](ctx)
+
+
+def _prior(ctx: dict) -> dict:
+    """데모: '문제:'로 시작하는 줄을 진위형 기출로 옮긴다."""
+    items = []
+    for ln in ctx.get("text", "").splitlines():
+        if "문제:" in ln:
+            items.append({"type": "ox", "stem": ln.split("문제:", 1)[1].strip(), "statements": [], "choices": [],
+                          "answer": "O", "explanation": ""})
+    return {"items": items}
 
 
 def _pool(ctx: dict) -> dict:

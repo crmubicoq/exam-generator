@@ -61,7 +61,8 @@ class Pipeline:
         self.lock = threading.Lock()
         self.meta = project.meta
         # G6 비교 대상은 채택된 문항만 (수동확인·삭제 후보 제외, Codex C7)
-        self.existing = project.items(status=["approved", "auto_pass", "warn"])
+        # 기출(prior)도 중복 비교·회피 목록에 넣는다 — 이미 출제·서비스한 문항을 다시 내지 않게(담당자 협의 2026-10-23)
+        self.existing = project.items(status=["approved", "auto_pass", "warn", "prior"])
         for it in self.existing:
             it["_tokens"] = dedup.tokens(it)
         self.page_errors: list[int] = []
@@ -284,7 +285,8 @@ class Pipeline:
     def _avoid_list(self, g: int) -> list[str]:
         with self.lock:
             same = [it for it in self.existing if it.get("page") == g or g in (it.get("source_pages") or [])]
-        return [f"[{it['type']}] {it.get('key_point') or it.get('stem', '')[:80]}" for it in same][-40:]
+        return [f"[{'기출 ' if it.get('status') == 'prior' else ''}{it['type']}] {it.get('key_point') or it.get('stem', '')[:80]}"
+                for it in same][-40:]
 
     def _to_item(self, r: dict, s: dict, attempt: int) -> dict:
         item = {

@@ -14,7 +14,7 @@ from .llm.client import LLMClient
 from .store import Project, now
 from .validate import dedup, evidence, review_llm, rules, schema, solver
 
-ACCEPTED = ("approved", "auto_pass", "warn")  # G6 비교 대상: 채택된 문항만 (수동확인·삭제 후보 제외, Codex C7)
+ACCEPTED = ("approved", "auto_pass", "warn", "prior")  # G6 비교 대상: 채택된 문항 + 기출(수동확인·삭제 후보 제외, Codex C7)
 
 
 def revalidate_code(project: Project, item: dict) -> tuple[list[str], list[str]]:

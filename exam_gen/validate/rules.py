@@ -26,6 +26,16 @@ _STEM_SOURCE_PREFIX = re.compile(r"^(?:원고|교재)(?:에\s*따르면,?|에\s*
 _STATEMENT_STEM = re.compile(r"(\S+?)(?:을|를)\s*(?:모두\s*)?(?:고른다|선택한다|고르시오|선택하시오|고르는\s*문항이다|찾는다|찾으시오)\.?$")
 
 
+def _ends_with_question(stem: str) -> bool:
+    """선다형 발문이 질문(…?)으로 끝나는가. 자격시험형 사례 문항의 두 가지 표준 형식도 인정한다:
+    '…것은?' 뒤에 [사례]·<사례> 블록이 오는 경우, '…것은? (단, … 가정한다)'처럼 단서 괄호가 붙는 경우
+    (최상 슬롯이 이 형식 때문에 4번 모두 탈락 — 확인 시험 2026-10-27)."""
+    s = re.sub(r"\s*\(\s*단[,\s][^()]*\)\s*$", "", stem.rstrip())
+    if s.endswith("?"):
+        return True
+    return bool(re.search(r"\?\s*\n\s*[\[<〈【]\s*(사례|상황|자료)", stem))
+
+
 def _topic_particle(word: str) -> str:
     """받침 유무에 따라 '은/는'."""
     ch = word[-1] if word else ""
@@ -134,7 +144,7 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             lens = [len(ch.get("text", "")) for ch in item.get("choices") or []]
             if lens and min(lens) > 0 and max(lens) / min(lens) > c["thresholds"]["choice_length_ratio_warn"]:
                 warns.append("G3: 보기 길이 차이가 큼")
-        if not stem.rstrip().endswith("?"):
+        if not _ends_with_question(stem):
             fails.append("G3: 선다형 발문은 '…것은?'처럼 물음표로 끝나는 질문이어야 함")
 
     for where, text in _texts(item):

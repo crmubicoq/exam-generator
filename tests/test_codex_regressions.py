@@ -738,3 +738,10 @@ def test_prior_before_manuscript_is_linked_later(sample_project):
     assert it["page"] == 3 and it["chasi"] == p.pages[3]["chasi"]
     r = P.relink(p)
     assert r == {"total": 1, "linked": 1, "changed": 0}
+
+
+def test_case_question_formats_pass_g3():
+    """최상 사례형: '…것은?' 뒤 [사례] 블록, '…것은? (단, …)' 단서 괄호는 질문형으로 인정(확인 시험 2026-10-27)."""
+    from exam_gen.validate.rules import _ends_with_question as q
+    assert q("옳은 것은?") and q("옳은 것은?\n\n[사례] 고객이 왔다.") and q("옳은 것은? (단, 예외는 없다고 가정한다)")
+    assert not q("옳은 것을 고른다.") and not q("고객이 묻는다? 그래서 답한다.")

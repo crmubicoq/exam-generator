@@ -156,7 +156,9 @@ class LLMClient:
             self.usage["cost_usd"] += res.total_cost_usd
         mu = res.model_usage or {}
         if mu:  # 모델을 비워 두면 계정 기본값으로 응답한다 — 실제 모델 이름을 남긴다
-            self._tl.model = max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
+            # Claude Code가 보조 작업에 Haiku를 함께 쓰기도 하므로, 요청한 모델이 응답에 있으면 그것을 기록한다
+            self._tl.model = model if model in mu else max(
+                mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
         if res.is_error:
             raise LLMError(f"Agent SDK 오류: {res.result or res.errors}")
         if res.structured_output is not None:

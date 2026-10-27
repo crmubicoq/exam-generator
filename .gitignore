@@ -16,3 +16,8 @@ projects/
 *.pptx
 백업/
 dist/
+
+# 원고 문장을 인용한 검수 보고서는 올리지 않는다
+docs/claude_real_review_handoff.md
+docs/codex_real_review_3_result.md
+docs/codex_model_compare_review_result.md

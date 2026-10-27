@@ -12,22 +12,23 @@
 - 화면은 처음 쓰는 다른 팀 실무자 기준: 용어·옵션 설명을 화면에 바로 보이게, 안내 문구는 '~습니다'체(문항·해설은 지침대로 '~이다'체).
 - 문항 품질 판단은 Codex 교차 검수를 함께 받는다(민감한 영역이라 크로스 체크). 같은 AI가 만든 문항을 같은 AI가 검수한 등급은 그대로 비교하지 않는다.
 
-## 현재 상황 (2026-10-26 기준)
+## 현재 상황 (2026-10-27 기준)
 - 2026-10-23 담당자 회의 피드백 10가지 + 추가 기능을 모두 반영했다(상세: `docs/worklog/2026-10-26.md`, TODO 2-7절).
   - 검수 없이 출력, 원고 새 판 교체(표시는 토큰 0·확정 후 일괄 처리), 프로젝트 관리, 기출 등록, 유사답변, 함정 색 파랑, 8:2, 최상=자격시험형, 기본 AI Claude 구독
   - 빠른 출제, 최종 문항 자동 선정, 시험지 PDF, 완료 알림, 자동 백업, 출력 이력, 이의신청 조회
   - 휴대용 패키지: `python tools/build_portable.py` → `dist/`(git 제외). 패키지에는 마지막 커밋만 들어간다.
 - 운영 조건: 1~2개월은 Claude 구독, 당분간 로컬 설치형(서버형·문항 은행은 2차 범위).
 - 대시보드 기본 LLM: Claude 구독 로그인(`claude_agent_sdk`), 기본 모델 Opus 5.5(지금까지 시험 출제 모두 Opus 5.5 — 2026-10-27 확인).
+- 2026-10-27: Sonnet 비교(A·B) → Codex 블라인드 검수에서 Opus 우세 → 300문항은 Opus. Codex 지적 유형으로 규칙 보강(PROMPT_VERSION 2026-10-27.1) 후 확인 출제(묶음 Z) 완료, **Codex 재검수 대기**(`docs/codex_model_compare_review_request_2.md`). 블라인드 대응: X=Sonnet 출제+Opus 검증, Y=Opus(10/22), Z=Opus 새 규칙.
 
 ## 다음 할 일 — `docs/TODO.md` 참고
 1. 노트북에 휴대용 패키지 설치 확인(사용자).
-2. 최상 5문항 시험 출제 → **300문항 출제**(약 2~2.5시간, 호출 약 1,500회) — 사용자 승인 후. 결과를 담당자 재협의용으로 정리.
+2. Codex 재검수(묶음 Z) 결과 확인 → **300문항 출제**(약 2~2.5시간, 호출 약 1,500회) — 사용자 승인 후. 결과를 담당자 재협의용으로 정리.
 3. **[알림] 섞어 쓰기 교차 검증 테스트**: 출제는 Claude, G4 독립 풀이·G5 검수는 Codex. Codex 사용 한도 확인 후. 작업 시작 시 먼저 알린다.
 4. 문항 밖 지시 표현('사례 A', '위 사례') 검사 보강. 사내 LiteLLM·딥시크 시험(보안 정책 확인 후).
 
 ## 개발 메모
-- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 78개, `pytest.ini`로 tests/만 탐색).
+- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 81개, `pytest.ini`로 tests/만 탐색).
 - CLI: `python -m exam_gen.cli new|run|export|report|pool <프로젝트>` (`run --provider claude_agent_sdk|codex_cli`).
 - 출력 콘솔이 cp949라 한글이 깨지면 `PYTHONIOENCODING=utf-8`.
 - 프롬프트를 바꾸면 `exam_gen/config.py`의 `PROMPT_VERSION`을 올린다.

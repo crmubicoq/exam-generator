@@ -167,6 +167,25 @@ def best_page(project, item: dict) -> int | None:
     return best if score >= 0.35 else None
 
 
+def relink(project, only_missing: bool = False) -> dict:
+    """기출 문항의 원고 쪽 연결을 다시 계산한다(AI 사용 없음).
+    원고보다 기출을 먼저 올렸거나, 원고를 추가·교체한 뒤에 쓴다. only_missing이면 쪽이 없는 기출만.
+    반환: {"total", "linked", "changed"}"""
+    priors = project.items(status=["prior"])
+    changed = 0
+    for it in priors:
+        if only_missing and it.get("page") is not None:
+            continue
+        g = best_page(project, it)
+        chasi = project.pages[g]["chasi"] if g is not None else None
+        if (g, chasi) != (it.get("page"), it.get("chasi")):
+            it.update(page=g, chasi=chasi, source_pages=[g] if g is not None else [])
+            project.save_item(it, "prior_relink", {"page": g})
+            changed += 1
+    return {"total": len(priors), "linked": sum(1 for it in project.items(status=["prior"]) if it.get("page") is not None),
+            "changed": changed}
+
+
 def problems(item: dict) -> list[str]:
     out = []
     if not item.get("stem"):

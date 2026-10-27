@@ -723,3 +723,18 @@ def test_explanation_fail_blocks(sample_project):
     item = {"type": "ox", "difficulty": "중", "page": 1, "stem": "x", "answer": "O", "explanation": "", "evidence": []}
     fails, warns, _ = review_llm.review(Rev(), MOCK, sample_project, [item])["1"]
     assert any("해설" in f for f in fails)
+
+
+def test_prior_before_manuscript_is_linked_later(sample_project):
+    """원고보다 기출을 먼저 올려도, 원고를 등록하면 쪽이 자동으로 연결된다(AI 없음)."""
+    from exam_gen.ingest import prior_items as P
+    from exam_gen.store import Project
+    text = sample_project.page_text(3)[:200]
+    p = Project.create("기출 먼저", "순서 시험")
+    assert P.save(p, [{"type": "ox", "stem": text, "answer": "O", "explanation": ""}], "prior.xlsx") == 1
+    assert p.items(status=["prior"])[0]["page"] is None
+    p.add_source(SAMPLE_PDF)
+    it = p.items(status=["prior"])[0]
+    assert it["page"] == 3 and it["chasi"] == p.pages[3]["chasi"]
+    r = P.relink(p)
+    assert r == {"total": 1, "linked": 1, "changed": 0}

@@ -335,7 +335,11 @@ class Project:
         out.close()
         _atomic_write(self.dir / "pages.json", json.dumps(pages, ensure_ascii=False))
         self._pages_cache = None
-        return self._remap(old_pages, idx_map, relocate) if old_pages else 0
+        lost = self._remap(old_pages, idx_map, relocate) if old_pages else 0
+        if pages:  # 원고보다 먼저 올린 기출(쪽 미연결)을 새 원고에 연결한다
+            from .ingest.prior_items import relink
+            relink(self, only_missing=True)
+        return lost
 
     def _remap(self, old_pages: list[dict], idx_map: dict | None = None, relocate: str | None = None) -> int:
         """전역 페이지 번호(g)가 바뀐 뒤 문항·배치 슬롯을 새 번호로 옮긴다 (Codex C5).

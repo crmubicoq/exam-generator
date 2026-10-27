@@ -19,6 +19,14 @@ ui.header("기출문제 등록", "history_edu",
           "이미 출제·서비스한 문항을 올려 두면, 이 과정에서 추가 출제할 때 같은 내용을 다시 내지 않습니다. "
           "기출 문항은 출력·검수·품질 리포트에는 들어가지 않습니다.")
 
+if not p.pages:
+    st.warning("**원고를 먼저 등록하세요.** 기출은 원고에서 가장 관련 있는 쪽에 연결되어야 그 쪽을 출제할 때 AI에게 "
+               "'피해야 할 문항'으로 전달됩니다. 원고 없이 올린 기출은 중복 검사에만 쓰이고, 나중에 원고를 등록하면 "
+               "자동으로 쪽이 연결됩니다.", icon=":material/warning:")
+    st.page_link("app_pages/register.py", label="원고 등록으로 가기", icon=":material/upload_file:")
+st.info("**순서**: ① 원고 등록 → ② 기출문제 등록(이 화면) → ③ 출제 옵션 → ④ 출제. "
+        "기출은 이 프로젝트 안에만 저장되므로, 같은 과정의 프로젝트에서 출제할 때만 제외됩니다.", icon=":material/info:")
+
 # ---------- 등록된 기출 ----------
 priors = p.items(status=["prior"])
 with st.container(border=True):
@@ -28,6 +36,15 @@ with st.container(border=True):
         st.dataframe(pd.DataFrame([{"파일": k, "문항": v} for k, v in by_src.items()]), hide_index=True, width="stretch")
         st.caption("원고에서 가장 관련 있는 쪽이 자동으로 연결되며, 그 쪽을 추가 출제할 때 '피해야 할 문항'으로 전달됩니다. "
                    "모든 기출은 새 문항의 중복 검사(G6)에도 쓰입니다.")
+        unlinked = sum(1 for it in priors if it.get("page") is None)
+        l1, l2 = st.columns([3, 1])
+        l1.markdown(f"원고 쪽 연결: **{len(priors) - unlinked}문항 연결** · {unlinked}문항 미연결"
+                    + (" — 원고와 겹치는 낱말이 적어 관련 쪽을 찾지 못한 문항입니다(중복 검사에는 쓰입니다)." if unlinked else ""))
+        if l2.button("기출 쪽 다시 연결", icon=":material/link:", width="stretch", disabled=not p.pages,
+                     help="원고를 나중에 올렸거나 새 판으로 바꿨을 때 누릅니다. AI를 쓰지 않습니다."):
+            r = P.relink(p)
+            st.toast(f"다시 연결했습니다: {r['linked']}/{r['total']}문항 연결, {r['changed']}문항 바뀜", icon=":material/link:")
+            st.rerun()
         c1, c2 = st.columns([3, 1])
         rm = c1.selectbox("지울 기출 파일", list(by_src), label_visibility="collapsed")
         if c2.button("이 파일의 기출 지우기", icon=":material/delete:", width="stretch"):

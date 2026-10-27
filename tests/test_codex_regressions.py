@@ -707,3 +707,19 @@ def test_model_choices_and_actual_model(tmp_path, monkeypatch):
     monkeypatch.setattr(mock, "respond", lambda task, ctx: {"ok": True})
     c.structured("s", "u", {"type": "object"}, model="mock", task="generate")
     assert c.actual_model("generate") == "mock" and c.usage["models"]["generate"]["mock"] == 1
+
+
+# ---------- Codex 모델 비교 검수(2026-10-27): 해설이 원고와 반대 뜻이면 탈락 ----------
+def test_explanation_fail_blocks(sample_project):
+    class Rev:
+        def structured(self, system, user, schema, **k):
+            assert "비교·우선순위 문장" in system and "참으로 처리한 보기·진술·O 지문도 조건을 확인한다" in system
+            res = {"answer": "pass", "explanation": "fail"}
+            return {"results": [{"id": i, "checks": [{"id": c, "result": res.get(c, "pass"), "note": "반대 뜻"} for c in
+                                                     ("answer", "explanation", "choices", "language", "dispute",
+                                                      "completeness", "importance", "difficulty", "fairness")],
+                                 "assessed_difficulty": "중", "suggestion": ""} for i in k["context"]["ids"]]}
+
+    item = {"type": "ox", "difficulty": "중", "page": 1, "stem": "x", "answer": "O", "explanation": "", "evidence": []}
+    fails, warns, _ = review_llm.review(Rev(), MOCK, sample_project, [item])["1"]
+    assert any("해설" in f for f in fails)

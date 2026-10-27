@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
 from ..config import DATA_DIR
 
@@ -25,12 +27,57 @@ OAUTH_PROVIDERS = ("claude_agent_sdk", "codex_cli")
 ROLES = {"generate": "생성", "solve": "G4 독립 풀이", "review": "G5 검수"}
 
 MODEL_PRESETS = {
-    "anthropic": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
-    "claude_agent_sdk": ["claude-sonnet-5-5", "claude-opus-5-5"],
+    "anthropic": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"],
+    "claude_agent_sdk": ["claude-opus-5-5", "claude-sonnet-5-5"],
     "codex_cli": [""],  # 비워 두면 Codex CLI 설정의 기본 모델
     "openai_compat": ["claude-sonnet-5-5", "claude-opus-5-5", "deepseek-v4-flash"],
     "mock": ["mock"],
 }
+# 화면 선택지: 모델 id → 설명. 빈 값("")은 공급자 쪽 기본값을 따른다.
+CLAUDE_MODELS = {
+    "": "계정 기본값 — 로그인한 계정의 기본 모델(요금제에 따라 다름. 이 개발 PC 계정은 Opus 5.5)",
+    "claude-opus-5-5": "Opus 5.5 — 가장 정교함(권장). 지금까지 시험 출제·시간 실측은 모두 이 모델",
+    "claude-sonnet-5-5": "Sonnet 5.5 — 품질과 속도의 균형. 사용량이 적음(이 모델로는 아직 시험 출제 전)",
+    "claude-haiku-5-5": "Haiku 5.5 — 빠르고 가벼움. 출제·검수 품질은 낮을 수 있음",
+}
+CUSTOM = "__custom__"
+
+
+def _codex_home() -> Path:
+    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+
+
+def codex_default_model() -> str:
+    """Codex CLI 설정(config.toml)의 기본 모델. 없으면 빈 문자열."""
+    try:
+        m = re.search(r'^model\s*=\s*"([^"]+)"', (_codex_home() / "config.toml").read_text(encoding="utf-8"), re.M)
+        return m.group(1) if m else ""
+    except OSError:
+        return ""
+
+
+def codex_models() -> dict[str, str]:
+    """이 PC의 Codex CLI가 받아 둔 모델 목록(로그인한 계정에서 쓸 수 있는 것). 목록이 없으면 기본값만."""
+    d = codex_default_model()
+    out = {"": f"Codex 기본값{f' — {d}' if d else ''}(Codex 설정을 따름)"}
+    try:
+        data = json.loads((_codex_home() / "models_cache.json").read_text(encoding="utf-8"))
+        for m in data.get("models", []):
+            if m.get("visibility") == "list" and m.get("slug"):
+                out[m["slug"]] = m.get("display_name") or m["slug"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return out
+
+
+def model_choices(provider: str) -> dict[str, str]:
+    if provider in ("claude_agent_sdk", "anthropic"):
+        return {k: v for k, v in CLAUDE_MODELS.items() if k or provider == "claude_agent_sdk"}
+    if provider == "codex_cli":
+        return codex_models()
+    return {m: m for m in MODEL_PRESETS.get(provider, []) if m}
+
+
 _SECRET_FIELDS = ("anthropic_api_key", "openai_api_key")
 _KEYRING_SERVICE = "exam-generator"
 
@@ -40,9 +87,10 @@ class LLMSettings:
     provider: str = "claude_agent_sdk"          # 생성 공급자(담당자 협의 2026-10-23: 당분간 Claude 구독)
     provider_solve: str = ""                    # G4 공급자("" = 생성과 같음)
     provider_review: str = ""                   # G5 공급자("" = 생성과 같음)
-    model_generate: str = "claude-sonnet-5-5"
-    model_solve: str = "claude-sonnet-5-5"
-    model_review: str = "claude-sonnet-5-5"
+    # 시험 출제(2026-10-21~22, 실측 시간·품질)는 모두 Opus 5.5로 했다(계정 기본값, 2026-10-27 확인) — 새 설치도 같게
+    model_generate: str = "claude-opus-5-5"
+    model_solve: str = "claude-opus-5-5"
+    model_review: str = "claude-opus-5-5"
     anthropic_api_key: str = ""                 # 저장 시 keyring으로 이동
     openai_base_url: str = ""
     openai_api_key: str = ""                    # 저장 시 keyring으로 이동

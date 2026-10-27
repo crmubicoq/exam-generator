@@ -685,3 +685,25 @@ def test_export_log_and_appeal(tmp_path):
     with pymupdf.open(out["path"]) as d:
         text = "".join(pg.get_text() for pg in d)
     assert "이의신청 검토서" in text and "기각" in text and "문항 폐기" in text
+
+
+def test_model_choices_and_actual_model(tmp_path, monkeypatch):
+    """모델 선택지(Claude 고정 목록·Codex는 이 PC의 모델 목록), 새 설치 기본 모델, 실제 응답 모델 기록."""
+    import json as _json
+    from exam_gen.llm import settings as ls
+    from exam_gen.llm.client import LLMClient
+    assert LLMSettings().model_generate == "claude-opus-5-5"  # 시험 출제와 같은 모델
+    assert "" in ls.model_choices("claude_agent_sdk") and "" not in ls.model_choices("anthropic")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert list(ls.model_choices("codex_cli")) == [""]  # 목록이 없으면 기본값만
+    (tmp_path / "config.toml").write_text('model = "gpt-x"\n', encoding="utf-8")
+    (tmp_path / "models_cache.json").write_text(_json.dumps({"models": [
+        {"slug": "gpt-x", "display_name": "GPT-X", "visibility": "list"},
+        {"slug": "hidden", "visibility": "hide"}]}), encoding="utf-8")
+    ch = ls.model_choices("codex_cli")
+    assert list(ch) == ["", "gpt-x"] and "gpt-x" in ch[""]
+    c = LLMClient(LLMSettings(provider="mock", model_generate="mock"))
+    from exam_gen.generate import mock
+    monkeypatch.setattr(mock, "respond", lambda task, ctx: {"ok": True})
+    c.structured("s", "u", {"type": "object"}, model="mock", task="generate")
+    assert c.actual_model("generate") == "mock" and c.usage["models"]["generate"]["mock"] == 1

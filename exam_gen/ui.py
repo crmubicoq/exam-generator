@@ -117,15 +117,30 @@ def settings_box():
                               format_func=lambda k: P.get(k, same))
 
         def model_input(label, val, key, prov):
-            presets = [x for x in llm_settings.MODEL_PRESETS[prov] if x]
+            """공급자별 모델 고르기. 목록에 없는 모델은 '직접 입력'. 고른 모델 설명을 바로 아래에 보여 준다."""
             if prov == "mock":
                 return "mock"
-            hint = ("비워 두면 Codex CLI 기본 모델" if prov == "codex_cli" else "예: " + ", ".join(presets))
-            return st.text_input(label, value=val if (prov != "codex_cli" or not val.startswith("claude")) else "",
-                                 key=key, help=hint, placeholder=hint)
+            choices = llm_settings.model_choices(prov)
+            if prov == "codex_cli" and val.startswith("claude"):
+                val = ""  # 공급자를 바꾸기 전 Claude 모델명이 남아 있으면 Codex 기본값으로
+            if prov in ("claude_agent_sdk", "anthropic") and val and not val.startswith("claude"):
+                val = ""
+            if prov == "anthropic" and not val:
+                val = "claude-opus-5-5"
+            keys_m = list(choices) + [llm_settings.CUSTOM]
+            cur = val if val in choices else llm_settings.CUSTOM
+            pick = st.selectbox(label, keys_m, index=keys_m.index(cur), key=f"{key}_{prov}_sel",
+                                format_func=lambda k: "직접 입력(목록에 없는 모델)" if k == llm_settings.CUSTOM
+                                else (choices[k].split(" — ")[0] if k else "기본값"))
+            if pick == llm_settings.CUSTOM:
+                return st.text_input(f"{label} 이름", value=val if val not in choices else "", key=key,
+                                     placeholder="예: claude-opus-5-5, gpt-6.1-sol, deepseek-v4-flash").strip()
+            st.caption(choices[pick])
+            return pick
         mg = model_input("생성 모델", s.model_generate, "mg", provider)
-        ms = model_input("G4 모델", s.model_solve, "ms", ps or provider)
-        mr = model_input("G5 모델", s.model_review, "mr", pr or provider)
+        ms = model_input("G4 독립 풀이 모델", s.model_solve, "ms", ps or provider)
+        mr = model_input("G5 검수 모델", s.model_review, "mr", pr or provider)
+        st.caption("기본값을 고르면 로그인한 계정의 기본 모델을 씁니다. 실제로 쓴 모델은 프로젝트 관리 → 출제 이력의 '실제 모델'에 남습니다.")
         used = {provider, ps or provider, pr or provider}
         ak, bu, ok = s.anthropic_api_key, s.openai_base_url, s.openai_api_key
         if "anthropic" in used:

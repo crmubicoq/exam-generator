@@ -2,6 +2,7 @@
 
   python -m exam_gen.tools.check_env          # 기본 점검(LLM 호출 없음)
   python -m exam_gen.tools.check_env --login  # Claude 로그인까지 실제 호출로 확인(구독 사용량 아주 조금 사용)
+  python -m exam_gen.tools.check_env --codex  # Codex 로그인 상태와 고를 수 있는 모델 목록(AI 호출 없음)
 """
 from __future__ import annotations
 
@@ -66,8 +67,22 @@ def main(argv=None) -> int:
         _line(None, "Claude 구독 로그인", "로그인 기록 있음" if cred.exists() else
               "로그인 기록을 찾지 못함 — 실제 출제를 하려면 'Claude_로그인.bat'으로 한 번 로그인하세요")
 
-    from exam_gen.llm.client import codex_executable
-    _line(None, "Codex 구독 로그인(선택)", "설치됨" if codex_executable() else "설치 안 됨 — Codex로 출제하지 않으면 필요 없습니다")
+    from exam_gen.llm.client import codex_executable, login_status
+    if not codex_executable():
+        _line(None, "Codex 구독 로그인(선택)", "설치 안 됨 — Codex를 쓰지 않으면 필요 없습니다('Codex_로그인.bat'으로 설치·로그인)")
+    else:
+        ok, msg = login_status("codex_cli")  # 'codex login status' — AI 호출 없음
+        _line(ok if "--codex" in argv else None, "Codex 구독 로그인(선택)",
+              "로그인됨" if ok else "설치됨, 로그인 필요 — 'Codex_로그인.bat'을 실행하세요")
+        if "--codex" in argv:
+            todo += not ok
+            if ok:
+                from exam_gen.llm.settings import codex_models
+                ms = codex_models()
+                print()
+                print("  이 계정에서 고를 수 있는 Codex 모델(대시보드 'LLM 설정'에서 선택):")
+                for k, v in ms.items():
+                    print(f"    - {v}" if not k else f"    - {k}  ({v})")
 
     if sys.platform == "win32":
         try:

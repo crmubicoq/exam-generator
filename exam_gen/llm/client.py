@@ -17,10 +17,11 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
-from .settings import ROLES, LLMSettings
+from .settings import ROLES, LLMSettings, codex_default_model
 
 
 class LLMError(RuntimeError):
@@ -31,7 +32,8 @@ class LLMClient:
     def __init__(self, settings: LLMSettings):
         self.s = settings
         self.usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "seconds": 0.0,
-                      "by_provider": {}}
+                      "by_provider": {}, "models": {}}
+        self._tl = threading.local()  # 호출마다 '실제로 응답한 모델'(병렬 호출이라 스레드별로)
 
     def structured(self, system: str, user: str, schema: dict, *, model: str, task: str,
                    context: dict | None = None, provider: str | None = None) -> dict:
@@ -47,12 +49,18 @@ class LLMClient:
             model = ""  # 다른 공급자용 모델명이 남아 있으면 Codex CLI 기본 모델을 쓴다
         if provider in ("claude_agent_sdk", "anthropic") and model and not model.lower().startswith("claude"):
             model = "claude-sonnet-5-5"
+        if provider == "anthropic" and not model:
+            model = "claude-opus-5-5"  # API는 기본 모델이 없다 — 시험 출제와 같은 모델
         bp = self.usage["by_provider"]
         bp[provider] = bp.get(provider, 0) + 1
         last = None
         for attempt in range(3):
             try:
+                self._tl.model = None
                 out = fn(system, user, schema, model=model, task=task, context=context or {})
+                real = self._tl.model or model or (codex_default_model() if provider == "codex_cli" else "") or "기본값"
+                per = self.usage["models"].setdefault(task, {})
+                per[real] = per.get(real, 0) + 1
                 self.usage["calls"] += 1
                 self.usage["seconds"] += time.time() - t0
                 return out
@@ -146,6 +154,9 @@ class LLMClient:
             raise LLMError("Agent SDK 응답이 없습니다.")
         if res.total_cost_usd:
             self.usage["cost_usd"] += res.total_cost_usd
+        mu = res.model_usage or {}
+        if mu:  # 모델을 비워 두면 계정 기본값으로 응답한다 — 실제 모델 이름을 남긴다
+            self._tl.model = max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
         if res.is_error:
             raise LLMError(f"Agent SDK 오류: {res.result or res.errors}")
         if res.structured_output is not None:
@@ -183,6 +194,11 @@ class LLMClient:
                     raise LLMError("Codex 로그인이 필요하다. 터미널에서 `codex login`을 실행하세요.")
                 raise RuntimeError(f"Codex 실행 실패(코드 {r.returncode}): {log[-400:]}")
             return _extract_json(op.read_text(encoding="utf-8"))
+
+    def actual_model(self, role: str) -> str:
+        """이 역할에서 실제로 가장 많이 응답한 모델(설정을 비워 둔 경우 확인용)."""
+        per = self.usage["models"].get(role) or {}
+        return max(per, key=per.get) if per else ""
 
     def _mock(self, system, user, schema, *, model, task, context):
         from ..generate import mock

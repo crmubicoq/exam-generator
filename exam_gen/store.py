@@ -31,6 +31,9 @@ from .ingest.pdf_text import content_text, detect_ocr, extract_lines
 _LOCK = threading.RLock()
 
 
+ROLE_KO = {"generate": "생성", "solve": "풀이", "review": "검수"}
+
+
 def now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
@@ -218,6 +221,8 @@ class Project:
             batches.append({"batch": b["batch"], "created": b.get("created", ""), "kind": b.get("kind"),
                             "slots": len(b.get("slots") or []), "status": b.get("status"),
                             "providers": ", ".join(u.get("by_provider") or {}) or "-", "calls": u.get("calls"),
+                            "models": " · ".join(f"{ROLE_KO.get(r, r)} {', '.join(m)}" for r, m in (u.get("models") or {}).items()
+                                                 if r in ROLE_KO) or "-",
                             "minutes": minutes, "accepted": s.get("accepted"), "manual": s.get("manual")})
         n_prior = len(self.items(status=["prior"]))
         if n_prior:

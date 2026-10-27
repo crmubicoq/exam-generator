@@ -14,6 +14,7 @@
 setup.bat              # 처음 한 번: Python 확인 → 가상환경 → 패키지 설치 → 설치 점검표
 run.bat                # 대시보드 실행 http://localhost:8620 (이미 실행 중이면 브라우저만 연다)
 Claude_로그인.bat       # 실제 출제용 Claude 구독 로그인(/login). Claude Code를 따로 설치할 필요 없음
+Codex_로그인.bat        # (선택) Codex 설치 확인(Node.js 필요 시 안내 → npm 설치) → codex login → 로그인·모델 목록 확인
 데이터_내보내기.bat     # 원고·출제 결과(projects)·설정을 ZIP 하나로 → 다른 PC로 이전
 데이터_가져오기.bat     # ZIP을 이 파일 위로 끌어다 놓으면 가져온다(기존 데이터는 백업 폴더로)
 ```
@@ -29,9 +30,11 @@ LLM은 사이드바 **LLM 설정**에서 고른다. 생성, G4 독립 풀이, G5
 |---|---|---|
 | 데모(mock) | 없음 | LLM 없이 모의 문항을 만든다. 화면 흐름 확인용이며 납품에 쓰지 않는다 |
 | Claude 구독 로그인 | OAuth: `Claude_로그인.bat` → `/login` | Claude Agent SDK(내장 claude.exe 사용). 구독 사용량에서 차감 |
-| Codex 구독 로그인 | OAuth: 터미널 `codex login`(ChatGPT 계정) | `codex exec --output-schema`. 구독 사용량만 쓴다 |
+| Codex 구독 로그인 | OAuth: `Codex_로그인.bat`(또는 터미널 `codex login`, ChatGPT 계정) | `codex exec --output-schema`. 구독 사용량만 쓴다. Codex는 패키지에 들어 있지 않아 Node.js + `npm install -g @openai/codex`가 필요 |
 | Anthropic API | API 키 | 키는 Windows 자격 증명 저장소에 보관된다 |
 | 사내 LiteLLM | 주소 + API 키 | OpenAI 호환. 키는 자격 증명 저장소에 보관된다. **실제 서버로는 아직 시험 전**. 딥시크 등 OpenAI 호환 API도 이 경로로 연결(공식 딥시크 API는 원고가 해외로 전송되므로 보안 정책 확인 필요) |
+
+**모델 선택**: 역할별(생성·G4·G5)로 목록에서 고른다. Claude는 Opus 5.5 / Sonnet 5.5 / Haiku 5.5 / 계정 기본값, Codex는 이 PC의 Codex가 받아 둔 모델 목록(`~/.codex/models_cache.json`), 목록에 없으면 '직접 입력'. 새 설치 기본값은 **Opus 5.5** — 지금까지 시험 출제와 시간 실측은 모두 Opus 5.5(계정 기본값)로 했다(2026-10-27 확인). 실제로 응답한 모델은 문항과 배치 기록에 남고 프로젝트 관리 → 출제 이력 '실제 모델'에 보인다.
 
 '연결·로그인 확인' 버튼으로 각 공급자의 로그인 상태를 확인한다. 구독 로그인 토큰은 각 CLI가 관리하며, 이 툴은 저장하지 않는다.
 
@@ -102,7 +105,7 @@ CLI: `python -m exam_gen.cli new|run|export|report|pool` (exam_gen/cli.py 참고
 ```
 python -m pytest tests -q
 ```
-현재 77개. 샘플 원고 `input_17-43.pdf` 기준으로 다음을 검증한다: 쪽수 매핑, 배분(차시별), 분포, 근거 매칭, 환각 차단, 규칙, 조합형 보기(라벨 빈도 단서), G4 비교, G5 함정·단답 용어 판정, 중복, 원리 반복 점검, 시의성, 엑셀 양식, 모의 파이프라인, 근거PDF, 설정 보관.
+현재 78개. 샘플 원고 `input_17-43.pdf` 기준으로 다음을 검증한다: 쪽수 매핑, 배분(차시별), 분포, 근거 매칭, 환각 차단, 규칙, 조합형 보기(라벨 빈도 단서), G4 비교, G5 함정·단답 용어 판정, 중복, 원리 반복 점검, 시의성, 엑셀 양식, 모의 파이프라인, 근거PDF, 설정 보관.
 Codex 검수에서 나온 반례는 `tests/test_codex_regressions.py`에 회귀 테스트로 고정한다.
 
 ## 담당자와 정할 것

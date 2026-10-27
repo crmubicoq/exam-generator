@@ -18,7 +18,7 @@
   - 빠른 출제, 최종 문항 자동 선정, 시험지 PDF, 완료 알림, 자동 백업, 출력 이력, 이의신청 조회
   - 휴대용 패키지: `python tools/build_portable.py` → `dist/`(git 제외). 패키지에는 마지막 커밋만 들어간다.
 - 운영 조건: 1~2개월은 Claude 구독, 당분간 로컬 설치형(서버형·문항 은행은 2차 범위).
-- 대시보드 기본 LLM: Claude 구독 로그인(`claude_agent_sdk`).
+- 대시보드 기본 LLM: Claude 구독 로그인(`claude_agent_sdk`), 기본 모델 Opus 5.5(지금까지 시험 출제 모두 Opus 5.5 — 2026-10-27 확인).
 
 ## 다음 할 일 — `docs/TODO.md` 참고
 1. 노트북에 휴대용 패키지 설치 확인(사용자).
@@ -27,7 +27,7 @@
 4. 문항 밖 지시 표현('사례 A', '위 사례') 검사 보강. 사내 LiteLLM·딥시크 시험(보안 정책 확인 후).
 
 ## 개발 메모
-- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 77개, `pytest.ini`로 tests/만 탐색).
+- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 78개, `pytest.ini`로 tests/만 탐색).
 - CLI: `python -m exam_gen.cli new|run|export|report|pool <프로젝트>` (`run --provider claude_agent_sdk|codex_cli`).
 - 출력 콘솔이 cp949라 한글이 깨지면 `PYTHONIOENCODING=utf-8`.
 - 프롬프트를 바꾸면 `exam_gen/config.py`의 `PROMPT_VERSION`을 올린다.

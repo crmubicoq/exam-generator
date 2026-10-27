@@ -190,8 +190,9 @@ class Project:
             raise ValueError("과정명을 입력하세요.")
         if name_taken(shown, exclude=self.slug):
             raise FileExistsError(f"같은 이름의 프로젝트가 이미 있습니다: {shown}")
+        old = self.meta.get("name", "")
         self.update_meta(name=shown, course=name.strip(), memo=memo.strip())
-        self.log("rename", {"name": shown})
+        self.log("rename", {"from": old, "name": shown})
 
     def info(self) -> dict:
         """프로젝트 관리 화면용 요약: 생성·마지막 수정, 원고, 문항 수, 배치 이력, 사용 모델."""

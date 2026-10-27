@@ -3,8 +3,8 @@ import pandas as pd
 import streamlit as st
 
 from exam_gen import backup, ui
-from exam_gen.store import (Project, delete_project, list_projects, list_trash, purge_trash, restore_project,
-                            set_last_project)
+from exam_gen.store import (Project, delete_project, display_name, list_projects, list_trash, purge_trash,
+                            restore_project, set_last_project)
 
 KIND = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제"}
 STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제",
@@ -32,7 +32,8 @@ infos.sort(key=lambda x: x["updated"], reverse=True)
 
 if infos:
     st.subheader(f":material/list: 프로젝트 {len(infos)}개")
-    st.caption("마지막 수정이 최근인 순서입니다. 행을 고르면 아래에 자세한 정보와 관리 버튼이 나옵니다.")
+    st.info("**표에서 프로젝트 행의 맨 왼쪽 칸을 클릭해 고르면**, 표 아래에 **열기 · 출제 이력 · 사용 모델 · "
+            "이름 바꾸기 · 백업 · 삭제**가 나옵니다. 마지막 수정이 최근인 순서입니다.", icon=":material/touch_app:")
     df = pd.DataFrame([{
         "프로젝트": x["name"], "만든 날": _t(x["created"]), "마지막 수정": _t(x["updated"]),
         "원고": ", ".join(f"{f}({n}쪽)" for f, n in x["sources"]) or "-", "문항": x["items"],
@@ -44,7 +45,9 @@ if infos:
                        key="proj_table")
     pick = sel.selection.rows[0] if sel and sel.selection.rows else None
 
-    if pick is not None:
+    if pick is None:
+        st.caption(":material/arrow_upward: 아직 고른 프로젝트가 없습니다. 위 표에서 행을 고르세요.")
+    else:
         x = infos[pick]
         p = Project(x["slug"])
         with st.container(border=True):
@@ -95,10 +98,22 @@ if infos:
                     st.caption("출제 기록이 없습니다.")
             with t3:
                 meta = p.meta
+                st.warning("이름은 신중하게 바꾸세요. **과정명은 앞으로 출제할 때 AI에게 과정 이름으로 전달**되고, "
+                           "엑셀 검증 리포트·근거PDF·시험지 PDF 제목과 이의신청 조회 결과에 표시됩니다. "
+                           "**이미 내보낸 파일과 출력 이력은 예전 이름 그대로 남습니다.** 문항·검수 결과·내부 폴더는 바뀌지 않으며, "
+                           "바꾼 기록(예전 이름 → 새 이름)은 프로젝트 기록에 남습니다.", icon=":material/edit_note:")
                 n1, n2 = st.columns(2)
-                new_name = n1.text_input("과정명", meta.get("course") or meta.get("name", ""), key=f"rn_n_{x['slug']}")
-                new_memo = n2.text_input("구분 메모", meta.get("memo", ""), key=f"rn_m_{x['slug']}")
-                if st.button("이름 저장", key=f"rn_b_{x['slug']}"):
+                new_name = n1.text_input("과정명", meta.get("course") or meta.get("name", ""), key=f"rn_n_{x['slug']}",
+                                         help="원고의 과정 이름입니다. 출제 프롬프트에 들어갑니다.")
+                new_memo = n2.text_input("구분 메모", meta.get("memo", ""), key=f"rn_m_{x['slug']}",
+                                         help="같은 과정을 여러 번 출제할 때 구분용입니다(예: 2026 상반기 · 300문항). AI에게는 전달하지 않습니다.")
+                shown = display_name(new_name, new_memo)
+                changed = bool(shown) and shown != meta.get("name", "")
+                if changed:
+                    st.markdown(f"현재 이름: **{meta.get('name', '')}**  \n바꿀 이름: **{shown}**")
+                ok_rn = st.checkbox("위 내용을 확인했고 이름을 바꿉니다", key=f"rn_ok_{x['slug']}", disabled=not changed)
+                if st.button("이름 저장", key=f"rn_b_{x['slug']}", disabled=not (changed and ok_rn),
+                             icon=":material/save:"):
                     try:
                         p.rename(new_name, new_memo)
                         st.toast("이름을 바꿨습니다.", icon=":material/check:")

@@ -279,7 +279,7 @@ class Pipeline:
             fb = [f"{sid}: {r}" for sid in (s["sid"] for s in chunk) for r in feedback.get(sid, [])]
             prev_g, next_g = _neighbor(pages, g, -1), _neighbor(pages, g, 1)
             user = render("generate_user.j2",
-                          course=meta["name"], subject_tag=meta.get("subject_tag", ""),
+                          course=meta.get("course") or meta["name"], subject_tag=meta.get("subject_tag", ""),
                           objectives=meta.get("objectives", ""), chasi=pages[g]["chasi"],
                           label=pages[g]["label"], text=self.p.page_text(g),
                           prev_label=pages[prev_g]["label"] if prev_g is not None else "",

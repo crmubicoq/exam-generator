@@ -21,7 +21,8 @@ PAGES = {
                  st.Page("app_pages/appeal.py", title="이의신청 조회", icon=":material/gavel:")],
 }
 
-nav = st.navigation(PAGES)
+# 메뉴는 사이드바에 진행 순서대로 직접 그린다(ui._step_menu) — 기본 메뉴는 숨긴다
+nav = st.navigation(PAGES, position="hidden")
 st.markdown("""<style>
 .block-container{padding-top:2.2rem;padding-bottom:1rem}
 /* 업로드 칸의 영어 안내를 한글로: 'Upload' → '파일 선택', '200MB per file …' → 끌어다 놓기 안내 */

@@ -58,6 +58,69 @@ def sidebar() -> Project | None:
     return current_project()
 
 
+DONE, DOING, TODO = "done", "doing", "todo"
+
+
+def flow(p: Project | None):
+    """프로젝트 진행 상태 → ({단계: done|doing|todo}, 지금 할 일(문장, 화면, 아이콘), 문항 상태 Counter).
+    홈 화면과 사이드바 단계 메뉴가 같이 쓴다."""
+    from collections import Counter
+
+    from .generate.generator import batch_state
+    state = {k: TODO for k in ("register", "prior", "options", "progress", "quality", "review", "export")}
+    nxt = ("왼쪽 사이드바의 **새 프로젝트**를 펼쳐 과정명을 입력하고 **만들기**를 누르세요.", None, "add")
+    c = Counter()
+    if p:
+        m = p.meta
+        items = p.items()
+        c = Counter(it["status"] for it in items)
+        batches = p.batches()
+        states = [batch_state(p, b["batch"]) for b in batches]
+        pending = c.get("manual", 0) + c.get("warn", 0) + c.get("auto_pass", 0)
+        exports = list((p.dir / "exports").glob("*")) if (p.dir / "exports").exists() else []
+
+        if m["sources"] and p.page_map_ready():
+            state["register"] = DONE
+        elif m["sources"]:
+            state["register"] = DOING
+        if p.items(status=["prior"]):
+            state["prior"] = DONE
+        if batches:
+            state["options"] = DONE
+        if any(s in ("running_here", "running_elsewhere") for s in states):
+            state["progress"] = DOING
+        elif batches:
+            state["progress"] = DONE
+            state["quality"] = DONE
+        if items and pending == 0 and c.get("approved"):
+            state["review"] = DONE
+        elif c.get("approved"):
+            state["review"] = DOING
+        if exports:
+            state["export"] = DONE
+
+        if not m["sources"]:
+            nxt = ("**원고 등록**에서 원고 파일(PDF·PPTX·DOCX·HWP)을 올리세요.", "app_pages/register.py", "upload_file")
+        elif not p.page_map_ready():
+            nxt = ("**원고 등록**에서 책 쪽수가 맞는지 확인하고 **이 쪽수로 확정**을 누르세요. 확정해야 출제할 수 있습니다.",
+                   "app_pages/register.py", "format_list_numbered")
+        elif not batches:
+            nxt = ("**출제 옵션**에서 문항 수와 난이도 비율을 정하고 '출제 시작'을 누르세요.", "app_pages/options.py", "tune")
+        elif state["progress"] == DOING:
+            nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항 기준 약 2~2.5시간).",
+                   "app_pages/progress.py", "autorenew")
+        elif any(s in ("stopped", "partial", "error", "orphan") for s in states):
+            nxt = ("중단되거나 일부만 끝난 출제가 있습니다. **출제 진행**에서 '이어서 출제'를 누르세요.",
+                   "app_pages/progress.py", "replay")
+        elif pending:
+            nxt = (f"검수할 문항이 **{pending}개** 남았습니다. **검수**에서 확인하고 승인하세요. "
+                   "승인한 문항만 최종 출력에 들어갑니다.", "app_pages/review.py", "fact_check")
+        elif c.get("approved"):
+            nxt = (f"승인된 문항 **{c['approved']}개**를 **출력**에서 엑셀과 근거PDF로 내려받으세요.",
+                   "app_pages/export.py", "download")
+    return state, nxt, c
+
+
 def render_sidebar():
     with st.sidebar:
         st.markdown("#### :material/folder_open: 프로젝트")
@@ -82,7 +145,7 @@ def render_sidebar():
             if sel != saved:
                 set_last_project(sel)
             ss["project"] = sel
-            st.caption(f"선택한 프로젝트: **{names[sel]}** · 문항 {len(Project(sel).items())}개")
+            st.caption(f"선택한 프로젝트: **{names[sel]}**")
         with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
             name = st.text_input("과정명 (필수)", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
             memo = st.text_input("구분 메모", placeholder="예: 2026 상반기 · 300문항 본출제")
@@ -95,7 +158,46 @@ def render_sidebar():
                     st.rerun()
                 except (FileExistsError, ValueError) as e:
                     st.error(str(e))
+        _step_menu()
         settings_box()
+
+
+# 단계 메뉴: (단계 키, 화면, 아이콘, 이름). 단계 키가 None이면 상태 표시 없음
+FLOW_MENU = [
+    (None, "app_pages/home.py", "home", "홈 · 지금 할 일"),
+    ("register", "app_pages/register.py", "upload_file", "1 원고 등록"),
+    ("prior", "app_pages/prior.py", "history_edu", "2 기출문제 등록 (선택)"),
+    ("options", "app_pages/options.py", "tune", "3 출제 옵션"),
+    ("progress", "app_pages/progress.py", "autorenew", "4 출제 진행"),
+    ("review", "app_pages/review.py", "fact_check", "5 검수"),
+    ("export", "app_pages/export.py", "download", "6 출력"),
+]
+MANAGE_MENU = [
+    ("app_pages/quality.py", "analytics", "품질 리포트"),
+    ("app_pages/appeal.py", "gavel", "이의신청 조회"),
+    ("app_pages/projects.py", "folder_managed", "프로젝트 관리"),
+]
+
+
+def _step_menu():
+    """진행 순서대로 번호를 붙인 메뉴 — 단계마다 완료(✓)·진행 중·지금 할 일 표시. 메뉴 자체가 단계 안내 역할을 한다."""
+    st.divider()
+    st.markdown("**진행 순서**")
+    state, nxt, _ = flow(current_project())
+    for k, page, icon, title in FLOW_MENU:
+        mark = ""
+        if k:
+            if page == nxt[1]:
+                mark = "  :orange[◀ 지금 할 일]"
+            elif state.get(k) == DONE:
+                mark = "  :green[✓]"
+            elif state.get(k) == DOING:
+                mark = "  :orange[진행 중]"
+        st.page_link(page, label=title + mark, icon=f":material/{icon}:")
+    st.markdown("**관리**")
+    for page, icon, title in MANAGE_MENU:
+        st.page_link(page, label=title, icon=f":material/{icon}:")
+    st.divider()
 
 
 def settings_box():

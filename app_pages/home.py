@@ -1,69 +1,15 @@
 """홈 — 처음 쓰는 사람을 위한 안내: 지금 할 일, 단계별 진행 상태, 사용 안내·용어 풀이."""
-from collections import Counter
-
 import streamlit as st
 
 from exam_gen import ui
-from exam_gen.generate.generator import batch_state
 
 ui.header("평가문항 자동 출제", "quiz",
           "원고를 올리면 원고 전체에 고르게 문항을 출제하고, 자동 검증과 사람 검수를 거쳐 양식 엑셀과 근거PDF로 내보냅니다.")
 
 p = ui.current_project()
 
-# ---------- 프로젝트 상태 → 단계별 진행 상태와 '지금 할 일' ----------
-DONE, DOING, TODO = "done", "doing", "todo"
-state = {k: TODO for k in ("register", "prior", "options", "progress", "quality", "review", "export")}
-nxt = ("왼쪽 사이드바의 **새 프로젝트**를 펼쳐 과정명을 입력하고 **만들기**를 누르세요.", None, "add")
-c = Counter()
-if p:
-    m = p.meta
-    items = p.items()
-    c = Counter(it["status"] for it in items)
-    batches = p.batches()
-    states = [batch_state(p, b["batch"]) for b in batches]
-    pending = c.get("manual", 0) + c.get("warn", 0) + c.get("auto_pass", 0)
-    exports = list((p.dir / "exports").glob("*")) if (p.dir / "exports").exists() else []
-
-    if m["sources"] and p.page_map_ready():
-        state["register"] = DONE
-    elif m["sources"]:
-        state["register"] = DOING
-    if p.items(status=["prior"]):
-        state["prior"] = DONE
-    if batches:
-        state["options"] = DONE
-    if any(s in ("running_here", "running_elsewhere") for s in states):
-        state["progress"] = DOING
-    elif batches:
-        state["progress"] = DONE
-        state["quality"] = DONE
-    if items and pending == 0 and c.get("approved"):
-        state["review"] = DONE
-    elif c.get("approved"):
-        state["review"] = DOING
-    if exports:
-        state["export"] = DONE
-
-    if not m["sources"]:
-        nxt = ("**원고 등록**에서 원고 파일(PDF·PPTX·DOCX·HWP)을 올리세요.", "app_pages/register.py", "upload_file")
-    elif not p.page_map_ready():
-        nxt = ("**원고 등록**에서 책 쪽수가 맞는지 확인하고 **이 쪽수로 확정**을 누르세요. 확정해야 출제할 수 있습니다.",
-               "app_pages/register.py", "format_list_numbered")
-    elif not batches:
-        nxt = ("**출제 옵션**에서 문항 수와 난이도 비율을 정하고 '출제 시작'을 누르세요.", "app_pages/options.py", "tune")
-    elif state["progress"] == DOING:
-        nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항 기준 약 2~2.5시간).",
-               "app_pages/progress.py", "autorenew")
-    elif any(s in ("stopped", "partial", "error", "orphan") for s in states):
-        nxt = ("중단되거나 일부만 끝난 출제가 있습니다. **출제 진행**에서 '이어서 출제'를 누르세요.",
-               "app_pages/progress.py", "replay")
-    elif pending:
-        nxt = (f"검수할 문항이 **{pending}개** 남았습니다. **검수**에서 확인하고 승인하세요. "
-               "승인한 문항만 최종 출력에 들어갑니다.", "app_pages/review.py", "fact_check")
-    elif c.get("approved"):
-        nxt = (f"승인된 문항 **{c['approved']}개**를 **출력**에서 엑셀과 근거PDF로 내려받으세요.",
-               "app_pages/export.py", "download")
+DONE, DOING, TODO = ui.DONE, ui.DOING, ui.TODO
+state, nxt, c = ui.flow(p)
 
 # ---------- 지금 할 일 ----------
 with st.container(border=True):
@@ -102,13 +48,10 @@ STEPS = [
     ("progress", "app_pages/progress.py", "autorenew", "4. 출제 진행",
      "AI가 페이지마다 문항을 만들고 자동 검증합니다. 진행률과 원고 전체에 고르게 나왔는지 확인합니다.",
      "상태 '완료'"),
-    ("quality", "app_pages/quality.py", "analytics", "5. 품질 리포트",
-     "출제 결과를 항목별 등급(A~D)으로 점검하고, 보완할 점(빈 페이지·부족한 난이도 등)을 확인합니다.",
-     "보완할 항목 확인"),
-    ("review", "app_pages/review.py", "fact_check", "6. 검수",
-     "문항과 원고 근거(하이라이트)를 나란히 보고 승인·수정·삭제합니다. 납품용 출력에는 승인한 문항만 들어갑니다.",
+    ("review", "app_pages/review.py", "fact_check", "5. 검수",
+     "품질 리포트(관리 메뉴)로 보완할 점을 본 뒤, 문항과 원고 근거(하이라이트)를 나란히 보고 승인·수정·삭제합니다.",
      "검수 대기 0"),
-    ("export", "app_pages/export.py", "download", "7. 출력",
+    ("export", "app_pages/export.py", "download", "6. 출력",
      "양식 엑셀, 근거PDF(원고에 출처 표시), 시험지 PDF를 내려받습니다.",
      "파일 다운로드"),
 ]

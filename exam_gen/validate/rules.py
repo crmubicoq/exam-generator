@@ -177,6 +177,12 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             fails.append("G3: 상·최상 문항은 서로 다른 구절의 근거가 2곳 이상 필요함(한 문장 대조로 풀림)")
 
     if t == "short":
+        stem = item.get("stem", "")
+        # 여러 단계 중 한 단계 이름을 묻는데 전체 단계 구성이 없으면 학습자가 다른 단계를 우길 수 있다
+        # (Codex 확인 검수 Z15·Z22, 2026-10-28). 전체 틀은 '접근 → 신뢰 형성 → (     ) → …'처럼 화살표로 제시한다.
+        if any(re.match(r"\s*단계", stem[m.end():]) for m in _BLANK.finditer(stem)) and stem.count("→") < 2:
+            fails.append("G3: 여러 단계 중 한 단계를 묻는데 전체 단계 구성이 발문에 없음 — "
+                         "'A → B → (     ) → D'처럼 전체 단계 틀을 제시할 것")
         ans = item.get("answer", "")
         if len(re.sub(r"\s", "", ans)) > 10 or len(ans.split()) > 3:
             warns.append("G3: 단답형 정답이 단어 수준보다 김")

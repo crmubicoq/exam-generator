@@ -44,8 +44,9 @@ SOLVE_SCHEMA = {
 
 REVIEW_CHECKS = ["answer", "explanation", "choices", "language", "dispute", "completeness",
                  "importance", "difficulty", "fairness"]
-REVIEW_BLOCKING = {"answer", "dispute", "choices", "explanation"}  # fail이면 탈락(보기: 상식만으로 정답이 보이는 경우,
-# 해설: 원고와 반대 뜻 — Codex 모델 비교 검수 X20, 2026-10-27), 나머지 fail은 사람 확인(경고)
+REVIEW_BLOCKING = {"answer", "dispute", "choices", "explanation", "completeness"}  # fail이면 탈락(보기: 상식만으로 정답이 보이는 경우,
+# 해설: 원고와 반대 뜻 — Codex 모델 비교 검수 X20, 2026-10-27; 조건 누락: 단계 구성 누락 등 — Z15·Z22, 2026-10-28),
+# 나머지 fail은 사람 확인(경고)
 
 # 함정 판정: 거짓 보기·진술·X 지문이 원고 문장과 '동시에 성립할 수 없는지'를 따로 판정한다.
 # contradiction(모순)이 아니면 정답의 거짓이 입증되지 않으므로 탈락 (Codex 실제 원고 검수 K00011·K00006, 2026-10-22)

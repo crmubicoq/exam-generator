@@ -745,3 +745,15 @@ def test_case_question_formats_pass_g3():
     from exam_gen.validate.rules import _ends_with_question as q
     assert q("옳은 것은?") and q("옳은 것은?\n\n[사례] 고객이 왔다.") and q("옳은 것은? (단, 예외는 없다고 가정한다)")
     assert not q("옳은 것을 고른다.") and not q("고객이 묻는다? 그래서 답한다.")
+
+
+def test_short_stage_blank_needs_full_stage_list():
+    """단답형으로 단계 이름을 물으면 전체 단계 틀이 있어야 한다(Codex 확인 검수 Z15·Z22, 2026-10-28)."""
+    from exam_gen.validate import rules
+    base = {"type": "short", "difficulty": "중", "answer": "통제·고립", "short_variants": [], "choices": [], "statements": [],
+            "explanation": "정답은 통제·고립 단계이다. 고객을 고립시키는 신호이다.", "evidence": []}
+    bad = {**base, "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [이런 답은 사기 구조 가운데 (     ) 단계의 신호이다.]"}
+    good = {**base, "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [접근 → 신뢰 형성 → (     ) → 행동 유도 → 탈취의 "
+                             "구조에서 이런 답은 (     ) 단계의 신호이다.]".replace("이런 답은 (     ) 단계", "이런 답은 빈칸 단계")}
+    assert any("전체 단계" in f for f in rules.check(bad)[0])
+    assert not any("전체 단계" in f for f in rules.check(good)[0])

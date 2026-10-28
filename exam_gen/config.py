@@ -13,7 +13,7 @@ PROJECTS_DIR = Path(os.environ.get("EXAM_GEN_PROJECTS", ROOT_DIR / "projects"))
 DATA_DIR = ROOT_DIR / "data"
 TEMPLATE_XLSX = PKG_DIR / "templates" / "excel_template.xlsx"
 PROMPTS_DIR = PKG_DIR / "llm" / "prompts"
-PROMPT_VERSION = "2026-10-27.1"
+PROMPT_VERSION = "2026-10-28.1"
 
 
 @lru_cache(maxsize=1)

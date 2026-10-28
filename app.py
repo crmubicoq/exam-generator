@@ -22,6 +22,15 @@ PAGES = {
 }
 
 nav = st.navigation(PAGES)
-st.markdown("<style>.block-container{padding-top:2.2rem;padding-bottom:1rem}</style>", unsafe_allow_html=True)
+st.markdown("""<style>
+.block-container{padding-top:2.2rem;padding-bottom:1rem}
+/* 업로드 칸의 영어 안내를 한글로: 'Upload' → '파일 선택', '200MB per file …' → 끌어다 놓기 안내 */
+[data-testid="stFileUploaderDropzone"] button p{font-size:0}
+[data-testid="stFileUploaderDropzone"] button p::after{content:"파일 선택";font-size:1rem}
+[data-testid="stFileUploaderDropzoneInstructions"] span{font-size:0}
+[data-testid="stFileUploaderDropzoneInstructions"] span::after{content:"또는 파일을 여기로 끌어다 놓으세요 (파일당 200MB까지)";font-size:.85rem}
+/* 지표 이름이 '원고 …'처럼 잘리지 않게 줄바꿈 허용 */
+[data-testid="stMetricLabel"] *{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+</style>""", unsafe_allow_html=True)
 ui.render_sidebar()
 nav.run()

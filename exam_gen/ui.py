@@ -103,12 +103,12 @@ def settings_box():
     P = llm_settings.PROVIDERS
     keys = list(P)
     title = " / ".join(sorted({P[x].split(" (")[0] for x in s.providers_in_use()}))
-    with st.expander(f"LLM 설정 · {title}", expanded=False, icon=":material/smart_toy:"):
+    with st.expander(f"AI 설정 · {title}", expanded=False, icon=":material/smart_toy:"):
         provider = st.selectbox("생성 공급자", keys, index=keys.index(s.provider), format_func=lambda k: P[k])
         same = "(생성과 같음)"
         opts = [""] + keys
         cross = st.toggle("G4·G5는 다른 공급자로 교차 검증", value=bool(s.provider_solve or s.provider_review),
-                          help="예: 생성은 Claude, 독립 풀이(G4)는 Codex — 다른 회사 모델이 정답을 다시 풀어 신뢰도를 높인다.")
+                          help="예: 생성은 Claude, 독립 풀이(G4)는 Codex — 다른 회사 모델이 정답을 다시 풀어 신뢰도를 높입니다.")
         ps, pr = "", ""
         if cross:
             ps = st.selectbox("G4 독립 풀이 공급자", opts, index=opts.index(s.provider_solve) if s.provider_solve in opts else 0,
@@ -148,15 +148,15 @@ def settings_box():
                                help="Windows 자격 증명 저장소에 보관된다. 비워 두면 환경변수 ANTHROPIC_API_KEY 사용")
         if "openai_compat" in used:
             bu = st.text_input("LiteLLM 주소", value=s.openai_base_url, placeholder="http://192.168.x.x:4000")
-            ok = st.text_input("API 키", value=s.openai_api_key, type="password", help="Windows 자격 증명 저장소에 보관된다")
+            ok = st.text_input("API 키", value=s.openai_api_key, type="password", help="Windows 자격 증명 저장소에 보관됩니다")
         if used & set(llm_settings.OAUTH_PROVIDERS):
             st.caption("구독 로그인(OAuth) 방식은 이 PC의 CLI 로그인 정보를 쓴다 — Claude: Claude Code에서 `/login`, "
-                       "Codex: 터미널에서 `codex login`. 이 툴은 로그인 토큰을 저장하지 않는다.")
+                       "Codex: 'Codex_로그인.bat'을 실행합니다. 이 도구는 로그인 토큰을 저장하지 않습니다.")
         c1, c2 = st.columns(2)
-        chunk = c1.number_input("호출당 슬롯 수", 1, 20, s.chunk_size, help="출력이 잘리면 줄인다")
+        chunk = c1.number_input("AI 한 번에 만드는 문항 수", 1, 20, s.chunk_size, help="AI 응답이 잘리면 줄입니다")
         workers = c2.number_input("병렬 페이지", 1, 8, s.workers)
         if provider == "mock":
-            st.caption("데모 모드: 원고 문장으로 모의 문항을 만든다. 화면 흐름 확인용이며 납품에 쓰지 않는다.")
+            st.caption("데모 모드: 원고 문장으로 모의 문항을 만듭니다. 화면 흐름 확인용이며 납품에 쓰지 않습니다.")
         b1, b2 = st.columns(2)
         if b1.button("저장", width="stretch"):
             try:
@@ -165,14 +165,14 @@ def settings_box():
                     model_generate=mg, model_solve=ms, model_review=mr,
                     anthropic_api_key=ak, openai_base_url=bu, openai_api_key=ok,
                     chunk_size=int(chunk), workers=int(workers), max_tokens=s.max_tokens, timeout_sec=s.timeout_sec))
-                st.success("저장했다.")
+                st.success("저장했습니다.")
             except RuntimeError as e:
                 st.error(str(e))
         if b2.button("연결·로그인 확인", width="stretch"):
             cur = llm_settings.load()
             for prov in cur.providers_in_use():
                 if prov == "mock":
-                    st.info("데모: 연결이 필요 없다.")
+                    st.info("데모: 연결이 필요 없습니다.")
                     continue
                 with st.spinner(f"{P[prov]} 확인 중…"):
                     if prov in llm_settings.OAUTH_PROVIDERS:

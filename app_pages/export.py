@@ -9,7 +9,7 @@ from exam_gen import select_final
 from exam_gen.output import evidence_pdf, exam_paper, excel, export_log, numbering
 
 p = ui.require_project(ui.current_project())
-ui.header("출력", "download", "승인된 문항으로 양식 엑셀과 근거PDF를 만듭니다.")
+ui.header("출력", "download", "① 출력할 문항을 고르고(출력 대상) ② 필요한 파일을 만들어 내려받습니다. 만든 파일은 출력 이력에 남습니다.")
 items = p.items()
 c = Counter(it["status"] for it in items)
 # 결과 파일은 프로젝트별로 기억한다(다른 프로젝트로 바꿨을 때 이전 파일이 보이지 않게)
@@ -64,12 +64,12 @@ with st.container(border=True):
             return f"전체 (모든 출제 회차) · {n}문항"
         info = batches[b - 1]
         day = (info.get("created") or "")[5:10].replace("-", "/")
-        return f"배치 {b} · {KIND.get(info['kind'], info['kind'])} · {day} · {n}문항"
+        return f"{b}회차 · {KIND.get(info['kind'], info['kind'])} · {day} · {n}문항"
 
     with s1:
         batch = st.selectbox("출력 범위", [None] + [b["batch"] for b in batches], format_func=_scope_label)
-        st.caption("**배치**는 출제를 한 번 실행한 회차입니다(처음 출제 = 배치 1, 이후 추가 출제마다 2, 3 …). "
-                   "보통은 **전체**를 고르고, 추가 출제분만 따로 납품할 때 해당 배치를 고릅니다.")
+        st.caption("**회차**는 '출제 시작'을 한 번 누른 단위입니다(처음 출제 = 1회차, 이후 추가 출제마다 2, 3 …). "
+                   "보통은 **전체**를 고르고, 추가 출제분만 따로 납품할 때 해당 회차를 고릅니다.")
 
 sel = numbering.select(items, batch=batch, scope=scope)
 if not sel:
@@ -79,7 +79,7 @@ n_manual = sum(1 for it in sel if it.get("status") == "manual")
 st.markdown(f"**출력 대상 {len(sel)}문항**" + (f" · 자동 검증 탈락 {n_manual}문항 포함" if n_manual else ""))
 stamp = datetime.now().strftime("%Y%m%d_%H%M")
 base = p.dir / "exports"
-tag = {"all": "검수전_", "passed": "초안_", "approved": "", "selected": "최종선정_"}.get(scope, "") + (f"배치{batch}_" if batch else "")
+tag = {"all": "검수전_", "passed": "초안_", "approved": "", "selected": "최종선정_"}.get(scope, "") + (f"{batch}회차_" if batch else "")
 
 
 def _name(path: str) -> str:
@@ -105,7 +105,7 @@ k1, k2, k3 = st.columns(3)
 with k1.container(border=True, height="stretch"):
     st.markdown("##### :material/table_view: 평가문항 엑셀")
     st.caption("제출 양식 그대로 4행부터 채웁니다.\n\n"
-               "- **최종 시트**: 승인 문항만, 번호 순서대로\n"
+               "- **최종 시트**: 위에서 고른 출력 대상, 번호 순서대로\n"
                "- **검수용(수정표시)** 숨김 시트: 삭제 = 회색 줄, 수정 = 노란 칸·빨간 글씨\n"
                "- **검증리포트** 시트: 난이도·유형·정답 위치 분포, 페이지 커버리지")
     act = st.container(key="export_act_xlsx")

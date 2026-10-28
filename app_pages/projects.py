@@ -81,7 +81,7 @@ if infos:
             with t1:
                 if x["batches"]:
                     st.dataframe(pd.DataFrame([{
-                        "배치": b["batch"], "날짜": _t(b["created"]), "종류": KIND.get(b["kind"], b["kind"]),
+                        "회차": b["batch"], "날짜": _t(b["created"]), "종류": KIND.get(b["kind"], b["kind"]),
                         "슬롯": b["slots"], "상태": b["status"], "AI": b["providers"], "실제 모델": b.get("models", "-"),
                         "AI 호출": b["calls"],
                         "걸린 시간(분)": b["minutes"], "통과": b["accepted"], "수동확인": b["manual"],

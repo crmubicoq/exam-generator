@@ -10,30 +10,31 @@ GRADE_COLOR = {"A": "#1a7f37", "B": "#0969da", "C": "#bc4c00", "D": "#cf222e"}
 GRADE_TEXT = {"A": "납품 수준", "B": "경미한 보완", "C": "보완 필요", "D": "재출제 권장"}
 CAT_KO = {k: v[0] for k, v in GRADE_RULES.items()} | EXTRA_CATS
 ACTION = {
-    "accuracy": "검수 화면에서 해당 문항을 수정하거나 삭제한다.",
-    "dispute": "검수 화면에서 '일반적으로', '가장 거리가 먼' 같은 단서 문구를 넣거나 문항을 삭제한다.",
-    "evidence": "L1 근거 문항은 검수 화면 '원고 근거' 탭에서 하이라이트를 확인하고 승인한다.",
-    "coverage": "출제 옵션 → '페이지 재출제(강제 할당)'로 문항이 없는 페이지만 다시 출제한다.",
-    "format": "검수 화면에서 문장을 고치고 'LLM 재검증' 후 승인한다.",
-    "discrimination": "검수 화면에서 오답 보기를 원고의 다른 항목 내용으로 바꾸거나 문항을 삭제한다.",
-    "difficulty": "출제 옵션 → '추가 출제'에서 모자란 난이도(상·최상)만 수량을 지정해 보충한다.",
+    "accuracy": "검수 화면에서 해당 문항을 고치거나 삭제합니다.",
+    "dispute": "검수 화면에서 '일반적으로', '가장 거리가 먼' 같은 단서 문구를 넣거나 문항을 삭제합니다.",
+    "evidence": "근거가 부분 일치(L1)인 문항은 검수 화면 '원고 근거' 탭에서 하이라이트를 확인하고 승인합니다.",
+    "coverage": "출제 옵션에서 '페이지 재출제'를 골라 문항이 없는 페이지만 다시 출제합니다.",
+    "format": "검수 화면에서 문장을 고치고 'AI 재검증' 후 승인합니다.",
+    "discrimination": "검수 화면에서 오답 보기를 원고의 다른 항목 내용으로 바꾸거나 문항을 삭제합니다.",
+    "difficulty": "출제 옵션 → '추가 출제'에서 모자란 난이도(상·최상)만 수량을 지정해 보충합니다.",
 }
 
 p = ui.require_project(ui.current_project())
-ui.header("품질 리포트", "analytics", "출제 결과를 지침·유의사항 기준으로 자동 점검한 자체 평가다. 사람 검수 전에 무엇을 보완할지 판단하는 데 쓴다.")
+ui.header("품질 리포트", "analytics", "출제 결과를 지침·유의사항 기준으로 자동 점검한 결과입니다. 검수 전에 무엇을 보완할지 판단하는 데 씁니다. "
+          "(같은 AI가 매긴 자체 평가이므로 사람 검수를 대신하지 않습니다.)")
 
 batches = p.batches()
 if not batches:
-    st.info("출제된 배치가 없다.")
+    st.info("아직 출제하지 않았습니다. 출제 옵션에서 출제를 시작하세요.")
     st.stop()
-KIND = {"initial": "최초", "additional": "추가", "repair": "재출제"}
+KIND = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제", "revise": "원고 변경 처리"}
 opts = [None] + [b["batch"] for b in batches]
 sel = st.selectbox("범위", opts, format_func=lambda b: "전체 문항" if b is None else
-                   f"배치 {b} · {KIND.get(batches[b - 1]['kind'] if b - 1 < len(batches) else '', '')}")
+                   f"{b}회차 · {KIND.get(batches[b - 1]['kind'] if b - 1 < len(batches) else '', '')}")
 r = analyze(p, sel)
 cnt = r["counts"]
 if not cnt["accepted"]:
-    st.info("자동 검증을 통과한 문항이 아직 없다.")
+    st.info("자동 검증을 통과한 문항이 아직 없습니다.")
     st.stop()
 
 # ---------- 종합 ----------
@@ -41,7 +42,7 @@ bad = [k for k, g in r["grades"].items() if g in ("C", "D")]
 with st.container(border=True):
     st.markdown(f"#### :material/summarize: 종합 — 통과 {cnt['accepted']}문항 · 수동확인 {cnt['manual']} · 승인 {cnt['approved']}")
     if not bad:
-        st.success("모든 항목이 B 이상이다. 검수 화면에서 확인 후 승인하면 된다.", icon=":material/check_circle:")
+        st.success("모든 항목이 B 이상입니다. 검수 화면에서 확인하고 승인하면 됩니다.", icon=":material/check_circle:")
     else:
         st.warning("보완이 필요한 항목: " + ", ".join(f"**{CAT_KO[k]}**({r['grades'][k]})" for k in bad), icon=":material/warning:")
         for k in bad:
@@ -67,26 +68,27 @@ if _skipped:
             st.rerun()
 
 # ---------- 항목별 등급 ----------
-cols = st.columns(len(GRADE_RULES))
-for col, (k, (name, desc, cuts)) in zip(cols, GRADE_RULES.items()):
+_n = len(GRADE_RULES)
+cols = st.columns(4) + st.columns(4)
+for col, (k, (name, desc, cuts)) in zip(cols[:_n], GRADE_RULES.items()):
     g = r["grades"][k]
     with col.container(border=True, height="stretch"):
         st.markdown(f"<div style='text-align:center'><div style='font-size:0.85em;color:#555'>{name}</div>"
                     f"<div style='font-size:2.4em;font-weight:700;color:{GRADE_COLOR[g]};line-height:1.2'>{g}</div>"
                     f"<div style='font-size:0.75em;color:{GRADE_COLOR[g]}'>{GRADE_TEXT[g]}</div>"
-                    f"<div style='font-size:0.8em;color:#666;margin-top:0.3rem'>{r['values'][k]:.0%}</div></div>",
+                    f"<div style='font-size:0.8em;color:#666;margin-top:0.3rem'>문제 비율 {r['values'][k]:.0%}</div></div>",
                     unsafe_allow_html=True, help=f"{desc} · A ≤ {cuts[0]:.0%}, B ≤ {cuts[1]:.0%}, C ≤ {cuts[2]:.0%}, 그 이상 D")
 
 # ---------- 분포 ----------
 st.subheader(":material/bar_chart: 목표 대비 분포")
-c1, c2 = st.columns([3, 2])
+c1, c2 = st.columns([1, 1])
 with c1:
     d = r["difficulty"]
     t_tot = sum(d["target"].values()) or 1
     f_tot = sum(d["final"].values()) or 1
     df = pd.DataFrame([{"난이도": lv, "목표(%)": round(d["target"][lv] * 100 / t_tot, 1),
                         "실제(%)": round(d["final"][lv] * 100 / f_tot, 1)} for lv in LEVELS])
-    st.markdown("**난이도** — 실제는 검수(G5)가 '원고를 덮은 학습자' 기준으로 판정한 난이도")
+    st.markdown("**난이도** — '실제'는 AI 검수가 '원고를 덮고 시험 보는 학습자' 기준으로 판정한 난이도입니다")
     ui.bar_chart(df, "난이도", ["목표(%)", "실제(%)"], stack=False, height=230)
     if d.get("shortfall"):
         st.warning("목표보다 모자란 난이도: " + " · ".join(f"**{lv} {n}문항**" for lv, n in d["shortfall"].items())
@@ -102,12 +104,13 @@ with c2:
         ("선다형 정답 위치", " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in ap.items())),
         ("진위형 O / X", f"{r['ox']['O']} / {r['ox']['X']}"),
         ("선다형 옳지 않은 것 : 옳은 것", f"{pol['negative']} : {pol['positive']}  (목표 8 : 2)"),
-        ("근거 일치", f"원문 일치 L2 {r['evidence_levels']['L2']} · 부분 일치 L1 {r['evidence_levels']['L1']} · "
-                     f"미매칭 {r['evidence_levels']['미매칭']}"),
+        ("근거 일치", f"원문 그대로 {r['evidence_levels']['L2']} · 부분 일치 {r['evidence_levels']['L1']} · "
+                     f"못 찾음 {r['evidence_levels']['미매칭']}"),
         ("문항 없는 페이지", ", ".join(r["coverage"]["zero"]) or "없음"),
         ("문항이 몰린 페이지", ", ".join(r["coverage"]["dense"]) or "없음"),
     ]
-    st.dataframe(pd.DataFrame(rows, columns=["항목", "값"]), hide_index=True, width="stretch")
+    st.dataframe(pd.DataFrame(rows, columns=["항목", "값"]), hide_index=True, width="stretch",
+                 column_config={"항목": st.column_config.TextColumn(width="small"), "값": st.column_config.TextColumn(width="large")})
 
 # ---------- 같은 원리 반복 (최종 풀 점검) ----------
 from exam_gen.llm import settings as llm_settings  # noqa: E402
@@ -173,12 +176,12 @@ if issue_rows:
             st.session_state["review_queue"] = "all"
             st.switch_page("app_pages/review.py")
 else:
-    st.success("자동 점검에서 지적된 문항이 없다.")
+    st.success("자동 점검에서 지적된 문항이 없습니다.")
 
 with st.expander("등급 기준과 계산 방법", icon=":material/info:"):
     st.markdown("\n".join(f"- **{name}**: {desc} — A ≤ {c[0]:.0%} · B ≤ {c[1]:.0%} · C ≤ {c[2]:.0%} · 그 이상 D"
                           for name, desc, c in GRADE_RULES.values()))
-    st.caption("자동 검증(G1~G6)을 통과한 문항만 집계한다. 등급은 사람 검수를 대신하지 않으며, 무엇을 먼저 볼지 정하는 데 쓴다.")
-    st.caption("'보기 다듬기(참고)'는 정답을 고르는 데 영향이 없는 검수 AI의 보기 수정 제안으로, 등급에 넣지 않는다.")
-    st.caption("'시의성 확인(참고)'은 기관명·법령·금액 기준·전화번호·날짜처럼 원고 발행 뒤 바뀔 수 있는 정보가 든 문항이다. "
-               "외부 확인은 하지 않으며, 정답이 그 정보에 달린 문항은 담당자·원고 집필자와 최신 여부를 확인한다.")
+    st.caption("자동 검증을 통과한 문항만 집계합니다. 등급은 사람 검수를 대신하지 않으며, 무엇을 먼저 볼지 정하는 데 씁니다.")
+    st.caption("'보기 다듬기(참고)'는 정답을 고르는 데 영향이 없는 검수 AI의 보기 수정 제안으로, 등급에 넣지 않습니다.")
+    st.caption("'시의성 확인(참고)'은 기관명·법령·금액 기준·전화번호·날짜처럼 원고 발행 뒤 바뀔 수 있는 정보가 든 문항입니다. "
+               "외부 확인은 하지 않으며, 정답이 그 정보에 달린 문항은 담당자·원고 집필자와 최신 여부를 확인합니다.")

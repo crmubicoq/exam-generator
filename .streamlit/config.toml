@@ -6,3 +6,7 @@ metricValueFontSize = "2rem"
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# 오른쪽 위 Streamlit 개발용 메뉴(Deploy 등)를 숨긴다 — 실무자 화면에 필요 없음
+toolbarMode = "minimal"

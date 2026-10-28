@@ -55,9 +55,14 @@ def last_project() -> dict:
 
 
 def set_last_project(slug: str, by: str = "ui"):
+    set_pref(project=slug, by=by, at=now())
+
+
+def set_pref(**kw):
+    """대시보드 기억값(마지막 프로젝트, 검수자 이름 등)을 ui_state.json에 합쳐 저장한다."""
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        _atomic_write(_UI_STATE, json.dumps({"project": slug, "by": by, "at": now()}, ensure_ascii=False))
+        _atomic_write(_UI_STATE, json.dumps({**last_project(), **kw}, ensure_ascii=False))
     except OSError:
         pass  # 기억하지 못해도 동작에는 지장 없음
 

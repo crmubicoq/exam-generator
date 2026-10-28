@@ -35,7 +35,7 @@ with st.container(border=True):
         by_src = Counter(it.get("prior_source", "-") for it in priors)
         st.dataframe(pd.DataFrame([{"파일": k, "문항": v} for k, v in by_src.items()]), hide_index=True, width="stretch")
         st.caption("원고에서 가장 관련 있는 쪽이 자동으로 연결되며, 그 쪽을 추가 출제할 때 '피해야 할 문항'으로 전달됩니다. "
-                   "모든 기출은 새 문항의 중복 검사(G6)에도 쓰입니다.")
+                   "모든 기출은 새 문항의 중복 검사에도 쓰입니다.")
         unlinked = sum(1 for it in priors if it.get("page") is None)
         l1, l2 = st.columns([3, 1])
         l1.markdown(f"원고 쪽 연결: **{len(priors) - unlinked}문항 연결** · {unlinked}문항 미연결"
@@ -128,3 +128,9 @@ if state.get("items") is not None:
         st.toast(f"기출 {n}문항을 저장했습니다(같은 발문은 한 번만).", icon=":material/check:")
         st.rerun()
     c2.caption("저장한 기출은 원고에서 가장 관련 있는 쪽에 자동으로 연결됩니다.")
+
+# ---------- 다음 단계 ----------
+st.divider()
+st.caption("기출이 없거나 다 올렸으면 다음 단계로 넘어갑니다.")
+if st.button("다음: 출제 옵션", type="primary", icon=":material/arrow_forward:"):
+    st.switch_page("app_pages/options.py")

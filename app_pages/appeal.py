@@ -109,12 +109,12 @@ with left:
     v = it.get("validation") or {}
     g4 = v.get("G4") or {}
     if g4:
-        st.markdown(f"**G4 독립 풀이** — 정답을 모르는 AI가 고른 답: **{g4.get('answer')}** "
+        st.markdown(f"**AI 독립 풀이(G4)** — 정답을 모르는 AI가 고른 답: **{g4.get('answer')}** "
                     + ("(정답과 같음)" if str(g4.get("answer")) == str(it.get("answer")) else ":red[(정답과 다름)]"))
         for j in g4.get("judgments") or []:
             st.caption(f"{j.get('target')}: {'옳음' if j.get('is_true') else '틀림'} — {j.get('reason')}")
     for t in (v.get("G5") or {}).get("traps") or []:
-        st.markdown(f"**G5 함정 판정 {t.get('target')}** — {appeal.VERDICT_KO.get(t.get('verdict'), t.get('verdict'))}")
+        st.markdown(f"**AI 검수의 함정 판정(G5) · 보기 {t.get('target')}** — {appeal.VERDICT_KO.get(t.get('verdict'), t.get('verdict'))}")
         st.caption(t.get("conflict") or t.get("reason") or "")
     for w in v.get("warnings") or []:
         st.caption(f":orange[경고] {w}")

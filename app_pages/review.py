@@ -31,7 +31,8 @@ _ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:mat
 _LIST_CSS = """<style>
 .st-key-review_list, .st-key-review_list [data-testid="stVerticalBlock"] {gap:0.1rem !important;}
 .st-key-review_list button {justify-content:flex-start; text-align:left; min-height:2rem; padding:0.1rem 0.6rem;}
-.st-key-review_list button p {white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.85em;}
+.st-key-review_list button p {white-space:normal; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2;
+  -webkit-box-orient:vertical; font-size:0.85em; line-height:1.35;}
 </style>"""
 
 
@@ -59,12 +60,22 @@ def _s(v) -> str:
 
 
 p = ui.require_project(ui.current_project())
-st.markdown("### :material/fact_check: 검수 &nbsp;<span style='font-size:0.55em;color:#888;font-weight:400'>"
-            "자동 검증(G1~G6)을 통과한 문항도 사람이 승인해야 최종 출력에 들어간다</span>", unsafe_allow_html=True)
+from exam_gen.store import last_project, set_pref  # noqa: E402
+
+h1, h2 = st.columns([3, 1.3], vertical_alignment="bottom")
+h1.markdown("### :material/fact_check: 검수 &nbsp;<span style='font-size:0.55em;color:#888;font-weight:400'>"
+            "문항과 원고 근거를 보고 승인·수정·삭제합니다. 납품용 출력에는 승인한 문항만 들어갑니다</span>",
+            unsafe_allow_html=True)
+if "who" not in st.session_state:
+    st.session_state["who"] = last_project().get("reviewer", "")
+who = h2.text_input("검수자 이름", key="who", placeholder="이름 입력",
+                    help="승인 기록에 남습니다. 한 번 넣으면 다음에도 기억합니다.")
+if who != last_project().get("reviewer", ""):
+    set_pref(reviewer=who)
 
 items = p.items()
 if not items:
-    st.info("출제된 문항이 없다.")
+    st.info("출제된 문항이 없습니다. 출제 옵션에서 출제를 시작하세요.")
     st.stop()
 pages = p.pages
 
@@ -128,7 +139,7 @@ def _leave_to_next():
 saved = view[pos]                                 # 저장된 상태(미리보기·승인 판단용)
 it = copy.deepcopy(saved)                         # 편집용 사본
 
-left, right = st.columns([3, 7], gap="large")
+left, right = st.columns([3.6, 6.4], gap="large")
 
 # ================= 왼쪽: 문항 카드 목록 =================
 with left:
@@ -153,8 +164,10 @@ with left:
                   on_click=_go, args=((lp + 1) * PAGE_SIZE,), help="목록 뒤쪽")
     with st.expander("일괄 승인", icon=":material/done_all:"):
         cand = [x["key"] for x in view if x["status"] == "auto_pass"]
-        st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 승인한다. 승인 시 관문을 다시 검사한다.")
-        sure = st.checkbox("내용을 확인했고 일괄 승인한다")
+        st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 한꺼번에 승인합니다. 승인할 때 자동 검사를 다시 합니다.")
+        if not st.session_state.get("who"):
+            st.caption(":material/info: 위쪽 **검수자 이름**을 먼저 넣으세요.")
+        sure = st.checkbox("내용을 확인했고 일괄 승인합니다")
         if st.button("일괄 승인", disabled=not (cand and sure and st.session_state.get("who"))):
             r = review_ops.bulk_approve(p, cand, st.session_state["who"])
             st.session_state["review_flash"] = f"승인 {len(r['approved'])} · 차단 {len(r['blocked'])}"
@@ -211,31 +224,31 @@ with right:
     with st.container(border=True):
         reasons = integrity.block_reasons(saved)
         need_conf = integrity.needs_evidence_confirm(saved)
-        a1, a2, a3, a4 = st.columns([2, 1.2, 1.2, 1.2], vertical_alignment="bottom")
-        who = a1.text_input("검수자", value=st.session_state.get("who", ""), placeholder="검수자 이름(승인에 필요)",
-                            label_visibility="collapsed")
-        st.session_state["who"] = who
+        a2, a3, a4 = st.columns([1.2, 1.4, 1.1], vertical_alignment="bottom")
+        if not who:
+            st.caption(":material/info: 승인하려면 맨 위 **검수자 이름**을 넣으세요.")
         confirm = False
         if need_conf:
-            confirm = st.checkbox("근거가 L1(부분 일치)이다 — '원고 근거' 탭에서 하이라이트를 직접 확인했다",
+            confirm = st.checkbox("근거가 원고와 부분 일치(L1)합니다 — '원고 근거' 탭에서 하이라이트를 직접 확인했습니다",
                                   key=f"conf_{saved['key']}")
         if a2.button("승인", type="primary", icon=":material/check:", width="stretch",
                      disabled=not who or saved["status"] in ("deleted", "approved")):
             ok, fails = review_ops.approve(p, saved["key"], who, evidence_confirmed=confirm)
             if ok:  # 승인하면 다음 문항으로 넘어간다
-                st.session_state["review_flash"] = f"{saved['key']} 승인했다"
+                st.session_state["review_flash"] = f"{saved['key']} 승인했습니다"
                 _leave_to_next()
                 st.rerun()
             else:  # 막힌 이유가 사라지지 않도록 다시 그리지 않는다
-                st.error("승인 불가: " + " / ".join(fails), icon=":material/block:")
-        if a3.button("LLM 재검증", icon=":material/refresh:", width="stretch", help="G4 독립 풀이 + G5 검수를 다시 실행"):
-            with st.spinner("재검증 중…"):
+                st.error("승인할 수 없습니다: " + " / ".join(fails), icon=":material/block:")
+        if a3.button("AI 재검증", icon=":material/refresh:", width="stretch",
+                     help="문항을 고친 뒤 AI 독립 풀이와 AI 검수를 다시 실행합니다(AI 호출 약 2회)"):
+            with st.spinner("AI 재검증 중…"):
                 review_ops.rerun_llm_gates(p, llm_settings.load(), saved["key"])
             st.rerun()
         if saved["status"] != "deleted":
             if a4.button("삭제", icon=":material/delete:", width="stretch"):
                 review_ops.set_status(p, saved["key"], "deleted", "")
-                st.session_state["review_flash"] = f"{saved['key']} 삭제했다"
+                st.session_state["review_flash"] = f"{saved['key']} 삭제했습니다"
                 _leave_to_next()
                 st.rerun()
         elif a4.button("복원", icon=":material/restore:", width="stretch"):
@@ -329,8 +342,8 @@ with right:
                     it["slot"]["combo_true"] = len(correct)
                 it["slot"]["answer"] = str(it["answer"])
                 r = review_ops.save_edit(p, it, note)
-                st.session_state["review_flash"] = ("저장했다 · " + ("코드 관문 탈락: " + "; ".join(r["validation"]["fails"])
-                                                                if r["validation"]["fails"] else "승인 전 'LLM 재검증'이 필요하다"))
+                st.session_state["review_flash"] = ("저장했습니다 · " + ("자동 검사 탈락: " + "; ".join(r["validation"]["fails"])
+                                                                if r["validation"]["fails"] else "승인 전에 'AI 재검증'을 누르세요"))
                 st.rerun()
 
     # --- 원고 근거 ---
@@ -359,7 +372,7 @@ with right:
     with tab_check, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         g4 = saved["validation"].get("G4")
         if g4:
-            st.markdown(f"**G4 독립 풀이**: 답 `{g4.get('answer')}` (출제 정답 `{saved['answer']}`) · "
+            st.markdown(f"**AI 독립 풀이(G4)** — 정답을 숨기고 다시 푼 답 `{g4.get('answer')}` (출제 정답 `{saved['answer']}`) · "
                         f"정답 유일 {g4.get('unique')} · 원고로 풀이 가능 {g4.get('solvable')}")
             if g4.get("judgments"):
                 st.dataframe(pd.DataFrame(g4["judgments"]), hide_index=True, width="stretch")
@@ -367,13 +380,13 @@ with right:
                 st.caption(g4["note"])
         g5 = saved["validation"].get("G5")
         if g5:
-            st.markdown(f"**G5 LLM 검수** · 실제 난이도 판정 `{g5.get('assessed_difficulty', '-')}`")
+            st.markdown(f"**AI 검수(G5)** · 실제 난이도 판정 `{g5.get('assessed_difficulty', '-')}`")
             st.dataframe(pd.DataFrame(g5.get("checks", [])), hide_index=True, width="stretch")
             if g5.get("suggestion"):
                 st.info("수정안: " + g5["suggestion"])
         g6 = saved["validation"].get("G6")
         if g6:
-            st.markdown(f"**G6 중복**: 가장 비슷한 문항 {g6.get('key')} (유사도 {g6.get('score')}) {g6.get('stem', '')}")
+            st.markdown(f"**중복 검사(G6)**: 가장 비슷한 문항 {g6.get('key')} (유사도 {g6.get('score')}) {g6.get('stem', '')}")
         st.markdown(f"**난이도 근거**: {saved.get('difficulty_basis', '')}  \n**판단 포인트**: {saved.get('key_point', '')}")
 
     # --- 이력 ---

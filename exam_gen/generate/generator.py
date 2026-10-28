@@ -319,6 +319,7 @@ class Pipeline:
             "answer": str(r.get("answer", "")).strip(), "short_variants": r.get("short_variants") or [],
             "explanation": r.get("explanation", ""), "evidence": r.get("evidence") or [],
             "key_point": r.get("key_point", ""), "difficulty_basis": r.get("difficulty_basis", ""),
+            "design": r.get("design", ""),
             "status": None, "history": [],
             "validation": {"attempts": attempt, "fails": [], "warnings": []},
             "gen": {"provider": self.s.provider_for("generate"),

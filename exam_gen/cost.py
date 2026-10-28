@@ -1,7 +1,9 @@
 """비용·시간 견적 — 지금까지 실행한 배치의 실측값(슬롯당 비용·시간)으로 계산한다.
 
-실측이 없으면 2026-10-21 Claude Sonnet 5.5 실측을 기본값으로 쓴다:
-  44슬롯 · 149호출 · 추정 $12.99 · 39분(병렬 3) → 슬롯당 약 $0.30 · 53초
+실측이 없으면(새 설치) 개발 시험 출제 실측을 기본값으로 쓴다:
+  비용 — 2026-10-21 Claude 44슬롯 · 추정 $12.99 → 슬롯당 약 $0.30
+  시간 — 2026-10-27 Opus 5.5 새 규칙 32슬롯 · 123호출 · 11.9분(병렬 3) → 슬롯당 약 23초
+         Codex 32슬롯 · 24.0분 → 슬롯당 약 45초
 구독 로그인(Claude·Codex)은 별도 청구 대신 구독 사용량에서 차감된다 — 화면에 그렇게 표시한다.
 """
 from __future__ import annotations
@@ -12,7 +14,7 @@ from datetime import datetime
 from .config import PROJECTS_DIR
 
 DEFAULT_USD_PER_SLOT = {"claude_agent_sdk": 0.30, "anthropic": 0.30, "openai_compat": 0.30, "codex_cli": 0.0, "mock": 0.0}
-DEFAULT_SEC_PER_SLOT = {"claude_agent_sdk": 53, "anthropic": 53, "openai_compat": 53, "codex_cli": 45, "mock": 0.5}
+DEFAULT_SEC_PER_SLOT = {"claude_agent_sdk": 23, "anthropic": 23, "openai_compat": 53, "codex_cli": 45, "mock": 0.5}
 SUBSCRIPTION = ("claude_agent_sdk", "codex_cli")
 
 

@@ -111,7 +111,7 @@ view = [it for it in items
         and (not f_page or _label(it) in f_page)
         and (not f_text or f_text in it.get("stem", "") or f_text == it["key"])]
 if not view:
-    st.info(f"'{QUEUES[queue][0]}' 대기열에 문항이 없다.", icon=":material/inbox:")
+    st.info(f"'{QUEUES[queue][0]}' 대기열에 문항이 없습니다.", icon=":material/inbox:")
     st.stop()
 
 # ---------- 현재 문항: 문항 키로 기억 (필터가 바뀌거나 승인한 문항이 목록에서 빠져도 위치 유지) ----------

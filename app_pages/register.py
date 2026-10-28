@@ -111,25 +111,35 @@ pages = p.pages
 _chasi = {x["chasi"] for x in pages if not x["excluded"]}
 step(3, "차시 나누기·출제 제외 페이지", len(_chasi) > 1 or len(pages) <= 15, "view_list")
 st.caption("**차시마다 문항 수를 분량에 맞춰 먼저 나누므로, 차시를 바르게 지정해야 원고 전체에 고르게 출제됩니다.** "
-           "'차시 일괄 지정'으로 쪽 범위마다 차시를 정하고, 표지·목차·학습정리처럼 출제하지 않을 페이지는 '제외'에 체크한 뒤 "
-           "**페이지 설정 저장**을 누르세요. 글자가 적은 페이지는 자동으로 제외됩니다.")
+           "아래 **범위로 한꺼번에 지정**에서 쪽 범위마다 차시를 정하고, 표지·목차·부록처럼 출제하지 않을 페이지를 "
+           "제외하세요(누르면 바로 저장). 한두 쪽만 고칠 때는 표에서 직접 바꾼 뒤 **페이지 설정 저장**을 누르세요. "
+           "글자가 적은 페이지는 자동으로 제외됩니다.")
 if len(_chasi) <= 1 and len(pages) > 15:
     st.warning(f"지금은 {len(pages)}쪽 전체가 **1차시**입니다. 원고가 여러 차시라면 나눠 주세요.", icon=":material/warning:")
 srcname = {s["id"]: s["filename"] for s in meta["sources"]}
 df = pd.DataFrame([{"g": x["g"], "순번": x["g"] + 1, "파일": srcname.get(x["src"], x["src"]), "원고 쪽수": x["label"],
                     "차시": x["chasi"], "제외": x["excluded"], "글자 수": x["chars"],
                     "미리보기": p.page_text(x["g"])[:60].replace("\n", " ")} for x in pages])
-with st.expander("차시 일괄 지정", icon=":material/format_list_numbered_rtl:"):
-    st.caption("표의 **순번**으로 범위를 정합니다(여러 파일이면 이어서 센 번호).")
+with st.container(border=True):
+    st.markdown("**:material/format_list_numbered_rtl: 범위로 한꺼번에 지정 (차시·출제 제외)**")
+    st.caption("표의 **순번**으로 범위를 정합니다(여러 파일이면 이어서 센 번호). 부록·참고문헌처럼 여러 쪽을 빼려면 "
+               "'출제 제외'를 고르세요. 누르면 바로 저장됩니다.")
+    if msg := st.session_state.pop("range_msg", None):
+        st.success(msg, icon=":material/check:")
+    what = st.radio("할 일", ["차시 지정", "출제 제외", "제외 풀기"], horizontal=True, label_visibility="collapsed")
     c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
     a = c1.number_input("시작 순번", 1, len(pages), 1)
     b = c2.number_input("끝 순번", 1, len(pages), len(pages))
-    ch = c3.number_input("차시", 1, 99, 1)
+    ch = c3.number_input("차시", 1, 99, 1, disabled=what != "차시 지정")
     if c4.button("적용", width="stretch"):
         for x in pages:
             if a - 1 <= x["g"] <= b - 1:
-                x["chasi"] = int(ch)
+                if what == "차시 지정":
+                    x["chasi"] = int(ch)
+                else:
+                    x["excluded"] = what == "출제 제외"
         p.save_pages(pages)
+        st.session_state["range_msg"] = f"순번 {a}~{b}: {what}" + (f" {ch}차시" if what == "차시 지정" else "") + " 적용했습니다."
         st.rerun()
 edited = st.data_editor(df, hide_index=True, width="stretch", height=420,
                         disabled=["g", "순번", "파일", "원고 쪽수", "글자 수", "미리보기"],

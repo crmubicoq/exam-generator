@@ -157,8 +157,10 @@ class LLMClient:
         mu = res.model_usage or {}
         if mu:  # 모델을 비워 두면 계정 기본값으로 응답한다 — 실제 모델 이름을 남긴다
             # Claude Code가 보조 작업에 Haiku를 함께 쓰기도 하므로, 요청한 모델이 응답에 있으면 그것을 기록한다
+            # 독립 풀이처럼 답이 짧으면 보조 Haiku 출력이 더 길 수 있어, 다른 모델이 있으면 Haiku는 빼고 고른다(2026-10-28)
+            main = [k for k in mu if "haiku" not in k] or list(mu)
             self._tl.model = model if model in mu else max(
-                mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
+                main, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
         if res.is_error:
             raise LLMError(f"Agent SDK 오류: {res.result or res.errors}")
         if res.structured_output is not None:

@@ -81,7 +81,7 @@ def _ev(target, quote, label, is_true, note=""):
 
 def _make(s, sents, alterable, rng, label):
     base = {"slot_id": s["sid"], "statements": [], "choices": [], "short_variants": [],
-            "difficulty_basis": f"{s['difficulty']} — 데모 생성"}
+            "difficulty_basis": f"{s['difficulty']} — 데모 생성", "design": "데모 설계"}
     if s["type"] == "ox":
         src = rng.choice(alterable if s["answer"] == "X" else sents)
         if s["answer"] == "X" and _alter(src):

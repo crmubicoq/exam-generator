@@ -9,10 +9,11 @@ EVIDENCE = {"type": "object", "required": ["target", "quote", "page_label", "is_
 
 GEN_ITEM = {
     "type": "object",
-    "required": ["slot_id", "key_point", "stem", "statements", "choices", "answer", "short_variants",
+    "required": ["slot_id", "design", "key_point", "stem", "statements", "choices", "answer", "short_variants",
                  "explanation", "evidence", "difficulty_basis"],
     "properties": {
-        "slot_id": _STR, "key_point": _STR, "stem": _STR,
+        # 문항을 쓰기 전에 적는 설계(정답 단서·난이도 미달 방지 — 100문항 시험 2026-10-28). 속성 순서대로 생성되므로 stem보다 앞에 둔다
+        "slot_id": _STR, "design": _STR, "key_point": _STR, "stem": _STR,
         "statements": {"type": "array", "items": {"type": "object", "required": ["label", "text", "is_true"],
                                                   "properties": {"label": _STR, "text": _STR, "is_true": _BOOL}}},
         "choices": {"type": "array", "items": {"type": "object", "required": ["text", "is_true"],

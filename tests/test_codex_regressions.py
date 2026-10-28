@@ -757,3 +757,41 @@ def test_short_stage_blank_needs_full_stage_list():
                              "구조에서 이런 답은 (     ) 단계의 신호이다.]".replace("이런 답은 (     ) 단계", "이런 답은 빈칸 단계")}
     assert any("전체 단계" in f for f in rules.check(bad)[0])
     assert not any("전체 단계" in f for f in rules.check(good)[0])
+
+
+def test_100run_rule_false_positives():
+    """100문항 시험(2026-10-28)에서 규칙이 정상 문항을 탈락시킨 두 형식."""
+    mcq = {"type": "mcq", "answer": "1", "explanation": "사례의 조건에 맞는 대응이다.", "statements": [], "evidence": [],
+           "choices": [{"text": t} for t in ("ㄱ", "ㄴ", "ㄷ", "ㄹ")]}
+    f, _ = rules.check({**mcq, "stem": "다음 사례에서 직원의 대응으로 옳은 것을 모두 고른 것은? [고객 B씨가 창구에서 급히 송금을 요청한다.]"})
+    assert not any("물음표" in x for x in f)
+    f, _ = rules.check({**mcq, "stem": "다음 사례에서 직원의 대응으로 적절하지 않은 것은?\n\n고객이 창구에서 급히 송금을 요청한다."})
+    assert not any("물음표" in x for x in f)
+    f, _ = rules.check({**mcq, "stem": "다음 사례에서 직원의 대응으로 옳은 것을 모두 고른 것은 [고객 B씨가 송금을 요청한다.]"})
+    assert any("물음표" in x for x in f)
+    short = {"type": "short", "answer": "x", "explanation": "정의에 해당하는 용어이다.", "choices": [], "statements": [], "evidence": []}
+    for stem in ("다음 괄호 안에 공통으로 들어갈 용어를 작성하시오. [먼저 (     )(와)과 충돌하는지 보고, (     )에 없던 조건을 찾는다.]",
+                 "다음 괄호 안에 공통으로 들어갈 용어를 작성하시오. [이 요청은 (     ) 의무와 구분하며, 법은 (     )(을)를 요구한다.]"):
+        f, _ = rules.check({**short, "stem": stem})
+        assert not any("조사" in x for x in f), stem
+    f, _ = rules.check({**short, "stem": "다음 괄호 안에 들어갈 용어를 작성하시오. [(     )를 먼저 확인한다.]"})
+    assert any("조사" in x for x in f)
+
+
+def test_common_sense_cue_in_false_option_fails():
+    """거짓 보기만 '확인 생략'형이면 상식으로 정답이 보인다 — AI 검수 전에 코드로 거른다(100문항 시험 2026-10-28)."""
+    it = {"type": "mcq", "answer": "4", "explanation": "보기 4는 원고와 다르다.", "statements": [], "evidence": [],
+          "stem": "고객 응대 원칙에 관한 설명으로 옳지 않은 것은?",
+          "choices": [{"text": "요구 행동을 먼저 확인할 수 있다.", "is_true": True},
+                      {"text": "공식 번호로 다시 확인할 수 있다.", "is_true": True},
+                      {"text": "서두르는 이유를 물어볼 수 있다.", "is_true": True},
+                      {"text": "경고가 없으면 확인은 생략할 수 있다.", "is_true": False}]}
+    f, _ = rules.check(it)
+    assert any("상식" in x for x in f)
+    it["choices"][3]["text"] = "상대가 알려 준 번호로 다시 확인할 수 있다."
+    f, _ = rules.check(it)
+    assert not any("상식" in x for x in f)
+    # 참 보기의 같은 표현은 단서가 아니다(원고가 그렇게 말할 수 있음)
+    it["choices"][0]["text"] = "정상 거래는 추가 확인 없이 처리할 수 있다."
+    f, _ = rules.check(it)
+    assert not any("상식" in x for x in f)

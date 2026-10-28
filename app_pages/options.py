@@ -185,8 +185,10 @@ with st.container(border=True):
         mins = est["minutes"]
         t = f"약 {mins // 60}시간 {mins % 60}분" if mins >= 60 else f"약 {mins}분"
         use = "구독 사용량에서 차감(별도 비용 없음)" if est["subscription"] else f"약 ${est['usd']}"
-        rows.append((True, "예상 시간·사용량", f"{sm['total']}문항 · {t} · {use} — 지금까지 출제한 실측 기준이며, 다시 출제하는 "
-                                            "문항이 많으면 늘어납니다. 끝나면 윈도우 알림이 뜹니다."))
+        rows.append((True, "예상 시간·사용량", f"{sm['total']}문항 · {t} · {use} — "
+                                            + ("이 PC에서 지금까지 출제한 실측 기준" if "실측" in est["basis"]
+                                               else "개발 시험 출제 실측 기준(Opus 5.5, 32문항 약 12분)")
+                                            + "이며, 다시 출제하는 문항이 많으면 늘어납니다. 끝나면 윈도우 알림이 뜹니다."))
     for ok, name, detail in rows:
         mark = (":green[:material/check_circle:]" if ok else ":orange[:material/error:]" if ok is None
                 else ":red[:material/cancel:]")

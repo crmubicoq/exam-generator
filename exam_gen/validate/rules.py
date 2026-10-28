@@ -14,9 +14,12 @@ _POLITE = re.compile(r"(입니다|합니다|습니다|됩니다|십시오|세요
 _PREFIX = re.compile(r"^\s*(?:[①②③④⑤]|\(?\d\)|\d[.)]|[ㄱㄴㄷㄹ][.)])\s*")
 _BLANK = re.compile(r"\(\s{2,}\)|\(\s*_+\s*\)|（\s+）")
 _NEG = re.compile(r"않은|아닌|틀린|거리가\s*먼|부적절|잘못된|옳지|해당하지")
+_COMMON_SENSE_CUE = re.compile(r"생략(해도|할\s*수|하고|한다|하며)|건너뛰|확인\s*(절차\s*)?없이|확인하지\s*않아도|않아도\s*된다|"
+                               r"할\s*필요(가|는)?\s*없|만\s*(확인하면|하면|있으면|보면)\s*(된다|충분|대응할\s*수)|만으로\s*충분")
 _NOANSWER = re.compile(r"정답\s*없음|모두\s*정답|모두\s*옳다|모두\s*틀리다")
 _QUOTED = re.compile(r"“[^”]*”|\"[^\"]*\"|‘[^’]*’|「[^」]*」|『[^』]*』")
-_PARTICLE = re.compile(r"\s*(?:으로|로서|로써|에서|에게|이란|이라|란|은|는|이|가|을|를|와|과|로|의|도|만|에)")
+# 앞말 받침에 따라 모양이 바뀌는 조사만 정답 힌트가 된다('에·의·도·만'은 늘 같아서 힌트 아님 — 2026-10-28)
+_PARTICLE = re.compile(r"(\s*)(?:으로|로서|로써|이란|이라|란|은|는|이|가|을|를|와|과|로)")
 # 학습자는 원고를 볼 수 없다 — 문항·보기·해설에 원고·쪽수·절 번호를 노출하지 않는다
 _LEAK = re.compile(r"원고|교안|\bp\.\s*\d|\d+\s*(?:쪽|페이지)|['‘]\s*\d+(?:\.\d+)+\.?\s")
 # 문항 안에 가리키는 대상이 없는 지시어 (유의사항: 주체·대상·상황 누락 금지)
@@ -33,7 +36,11 @@ def _ends_with_question(stem: str) -> bool:
     s = re.sub(r"\s*\(\s*단[,\s][^()]*\)\s*$", "", stem.rstrip())
     if s.endswith("?"):
         return True
-    return bool(re.search(r"\?\s*\n\s*[\[<〈【]\s*(사례|상황|자료)", stem))
+    # 질문 뒤에 줄을 바꿔 사례·자료가 오는 형식(괄호 유무 무관 — 상·최상 소량 시험 2026-10-28)
+    if re.search(r"\?\s*\n", stem):
+        return True
+    # '…고른 것은? [고령 조합원 A씨가 …]'처럼 같은 줄에 사례 블록이 붙어 끝나는 형식 (100문항 시험 2026-10-28)
+    return bool(re.search(r"\?\s*[\[<〈【][^\[\]<>〈〉【】]+[\]>〉】]\s*$", stem))
 
 
 def _topic_particle(word: str) -> str:
@@ -115,6 +122,19 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             warns.append(f"G3: {where}에 절대어 {hit} — 정답 단서가 될 수 있음")
             break
 
+    # 거짓 보기·진술·X 지문이 '확인 생략·~만 하면 된다'형이면 원고를 몰라도 상식으로 골라진다.
+    # AI 검수(G5)의 정답 단서 지적 중 가장 흔한 형태라, AI 호출 전에 코드로 먼저 걸러 다시 출제한다(100문항 시험 2026-10-28)
+    falses = [ch.get("text", "") for ch in item.get("choices") or [] if not ch.get("is_true")]
+    falses += [s.get("text", "") for s in item.get("statements") or [] if not s.get("is_true")]
+    if t == "ox" and str(item.get("answer")) == "X":
+        falses.append(item.get("stem", ""))
+    for text in falses:
+        m = _COMMON_SENSE_CUE.search(text or "")
+        if m:
+            fails.append(f"G3: 거짓 보기·진술에 '{m.group()}' 같은 확인 생략·과신 표현 — 원고를 몰라도 상식으로 골라짐. "
+                         "참 보기와 같은 어조로 쓰고 대상·조건·순서·경로를 바꿔 거짓으로 만들 것")
+            break
+
     if any(_NOANSWER.search(ch.get("text", "")) for ch in item.get("choices") or []):
         fails.append("G3: '정답 없음/모두 정답' 보기 사용 금지")
 
@@ -126,7 +146,9 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             fails.append("G3: 단답형 괄호가 둘 이상인데 '공통으로' 표시가 없음")
         for m in _BLANK.finditer(stem):
             # 빈칸 뒤 공백을 건너뛰고 조사로 시작하면 힌트가 된다. '(은)는'처럼 괄호 형식이면 허용 (Codex C16)
-            if _PARTICLE.match(stem, m.end()):
+            pm = _PARTICLE.match(stem, m.end())
+            # 띄어 쓴 경우 '(     ) 이용'처럼 다음 낱말의 첫 글자일 수 있으므로 조사 뒤가 끊길 때만 조사로 본다
+            if pm and (not pm.group(1) or not re.match(r"[가-힣]", stem[pm.end():pm.end() + 1])):
                 fails.append("G3: 단답형 괄호 뒤 조사가 정답 힌트가 됨 — '(은)는' 형식으로 쓸 것")
                 break
 

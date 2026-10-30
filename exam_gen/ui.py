@@ -126,9 +126,18 @@ def render_sidebar():
         st.markdown("#### :material/folder_open: 프로젝트")
         projects = list_projects()
         if projects:
-            # 이름이 길어 목록에서 잘리므로 선택한 프로젝트의 전체 이름을 아래에 따로 보여 준다
-            names = {s: Project(s).meta.get("name", s) for s in projects}
-            projects.sort(key=lambda s: names[s])
+            # 같은 과정을 여러 번 출제하면 긴 과정명에 가려 구분 메모가 안 보인다 — 목록에는 메모를 앞에 두고 과정명은 줄여 쓴다.
+            # 전체 이름은 목록 아래에 따로 보여 준다. 최근에 만든 프로젝트가 위로
+            metas = {s: Project(s).meta for s in projects}
+            names = {s: m.get("name", s) for s, m in metas.items()}
+
+            def _label(s):
+                m = metas[s]
+                course, memo = (m.get("course") or m.get("name") or s).strip(), (m.get("memo") or "").strip()
+                short = course if len(course) <= 16 else course[:15] + "…"
+                return f"{memo} — {short}" if memo else course
+
+            projects.sort(key=lambda s: metas[s].get("created", ""), reverse=True)
             # 마지막 작업 프로젝트를 파일로 기억한다: 새로고침·재시작에도 유지.
             # 열려 있는 화면은 CLI에서 바꾼 경우에만 따라간다(다른 사용자의 선택에 화면이 바뀌지 않게)
             state = last_project()
@@ -140,12 +149,15 @@ def render_sidebar():
             elif state.get("by") in ("cli", "page") and saved in projects and state.get("at") != ss.get("_cli_seen"):
                 ss["project_select"] = saved
             ss["_cli_seen"] = state.get("at")
-            sel = st.selectbox("과정(원고) 선택", projects, key="project_select", format_func=lambda s: names[s],
+            sel = st.selectbox("과정(원고) 선택", projects, key="project_select", format_func=_label,
                                label_visibility="collapsed")
             if sel != saved:
                 set_last_project(sel)
             ss["project"] = sel
-            st.caption(f"선택한 프로젝트: **{names[sel]}**")
+            _m = metas[sel]
+            st.caption(f"과정: **{_m.get('course') or names[sel]}**"
+                       + (f"  \n구분: **{_m['memo']}**" if _m.get("memo") else "")
+                       + f"  \n만든 날: {(_m.get('created') or '')[:10]}")
         with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
             name = st.text_input("과정명 (필수)", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
             memo = st.text_input("구분 메모", placeholder="예: 2026 상반기 · 300문항 본출제")

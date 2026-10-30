@@ -4,7 +4,7 @@
   1) 최종 제출 시트(양식 시트 이름 그대로): 승인 문항만, 수정 표시 없음
   2) '검수용(수정표시)' 시트 — 숨김: 삭제=회색, 수정=노란 셀+빨간 글씨, 수동 확인 포함
   3) '검증리포트' 시트: 분포·커버리지·관문 통계
-양식 오른쪽 숨김 열(R~Y): 문항키·난이도·근거 원문·배치·상태·검증 메모·근거PDF 라벨·허용 정답
+양식 오른쪽 숨김 열(R~Y): 문항키·난이도·근거 원문·회차·상태·검증 메모·근거PDF 라벨·허용 정답
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ..ingest.page_map import format_pages
 from ..plan.coverage import coverage_stats
 from . import export_log, numbering
 
-HIDDEN_COLS = ["문항키", "난이도", "근거 원문", "배치", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
+HIDDEN_COLS = ["문항키", "난이도", "근거 원문", "회차", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
 FIRST_HIDDEN = 18  # R
 GRAY = PatternFill("solid", fgColor="D9D9D9")
 PINK = PatternFill("solid", fgColor="FFD9D9")  # 최종 시트의 자동 검증 탈락(수동확인) 문항
@@ -234,10 +234,14 @@ def _report(ws, project, items_all, final):
         rows.append(["", p["label"], p["chasi"], p["chars"], round(cov["expected"].get(p["g"], 0), 1),
                      counts.get(p["g"], 0), flag])
     rows.append([])
-    rows.append(["배치", "종류", "상태", "통과", "수동확인", "관문별 탈락(시도 기준)"])
+    rows.append(["회차", "종류", "상태", "통과", "수동확인", "관문별 탈락(시도 기준)"])
     for b in project.batches():
         s = b["summary"] or {}
-        rows.append([b["batch"], b["kind"], b["status"], s.get("accepted"), s.get("manual"),
+        kind = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제",
+                "revise": "원고 변경 처리"}.get(b["kind"], b["kind"])
+        status = {"done": "완료", "partial": "부분 완료", "running": "진행 중", "stopped": "중지",
+                  "error": "오류"}.get(b["status"], b["status"])
+        rows.append([b["batch"], kind, status, s.get("accepted"), s.get("manual"),
                      ", ".join(f"{k}:{v}" for k, v in (s.get("gate_fail") or {}).items() if v)])
     for r in rows:
         ws.append(r)

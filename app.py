@@ -33,6 +33,9 @@ st.markdown("""<style>
 [data-testid="stFileUploaderDropzoneInstructions"] span::after{content:"또는 파일을 여기로 끌어다 놓으세요 (파일당 200MB까지)";font-size:.85rem}
 /* 지표 이름이 '원고 …'처럼 잘리지 않게 줄바꿈 허용 */
 [data-testid="stMetricLabel"] *{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+/* 목록을 펼치면 항목 전체가 보이도록 펼친 목록을 내용 너비만큼 넓힌다(사이드바 프로젝트 목록의 긴 이름) */
+[data-testid="stSelectboxVirtualDropdown"]{width:max-content!important;min-width:var(--trigger-width);max-width:80vw}
+[data-testid="stSelectboxVirtualDropdown"] [role="option"]{white-space:nowrap}
 </style>""", unsafe_allow_html=True)
 ui.render_sidebar()
 nav.run()

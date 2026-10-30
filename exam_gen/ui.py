@@ -107,7 +107,7 @@ def flow(p: Project | None):
         elif not batches:
             nxt = ("**출제 옵션**에서 문항 수와 난이도 비율을 정하고 '출제 시작'을 누르세요.", "app_pages/options.py", "tune")
         elif state["progress"] == DOING:
-            nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항 기준 약 2~2.5시간).",
+            nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항 기준 약 3시간 40분, 난이도 보정 출제 포함 추정).",
                    "app_pages/progress.py", "autorenew")
         elif any(s in ("stopped", "partial", "error", "orphan") for s in states):
             nxt = ("중단되거나 일부만 끝난 출제가 있습니다. **출제 진행**에서 '이어서 출제'를 누르세요.",
@@ -126,7 +126,7 @@ def render_sidebar():
         st.markdown("#### :material/folder_open: 프로젝트")
         projects = list_projects()
         if projects:
-            # 같은 과정을 여러 번 출제하면 긴 과정명에 가려 구분 메모가 안 보인다 — 목록에는 메모를 앞에 두고 과정명은 줄여 쓴다.
+            # 같은 과정을 여러 번 출제하면 긴 과정명에 가려 구분 메모가 안 보인다 — 목록에는 메모를 앞에 둔다.
             # 전체 이름은 목록 아래에 따로 보여 준다. 최근에 만든 프로젝트가 위로
             metas = {s: Project(s).meta for s in projects}
             names = {s: m.get("name", s) for s, m in metas.items()}
@@ -134,8 +134,7 @@ def render_sidebar():
             def _label(s):
                 m = metas[s]
                 course, memo = (m.get("course") or m.get("name") or s).strip(), (m.get("memo") or "").strip()
-                short = course if len(course) <= 16 else course[:15] + "…"
-                return f"{memo} — {short}" if memo else course
+                return f"{memo} — {course}" if memo else course  # 닫힌 칸에서는 메모가 먼저 보이고, 펼치면 전체가 보인다
 
             projects.sort(key=lambda s: metas[s].get("created", ""), reverse=True)
             # 마지막 작업 프로젝트를 파일로 기억한다: 새로고침·재시작에도 유지.

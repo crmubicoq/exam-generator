@@ -71,6 +71,12 @@ def joint_allocation(type_counts: dict, diff_counts: dict) -> dict:
         need = diff_counts.get(lv, 0)
         while need > 0:
             avail = {t: cap[t] for t in type_counts if lv in ALLOWED.get(t, LEVELS) and cap[t] > 0}
+            if lv == "상" and "ox" in avail:  # 진위형 '상'은 정답 X — 진위형의 절반을 넘으면 O/X 5:5가 깨진다(2026-10-30)
+                room = type_counts["ox"] // 2 - joint[("ox", "상")]
+                if room > 0:
+                    avail["ox"] = min(avail["ox"], room)
+                else:
+                    avail.pop("ox")
             if not avail:
                 names = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
                 ok = [names[t] for t in type_counts if lv in ALLOWED.get(t, LEVELS)]

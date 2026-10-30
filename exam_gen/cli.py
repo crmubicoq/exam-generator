@@ -16,7 +16,8 @@ from .config import criteria
 from .generate.generator import start_batch
 from .llm import settings as llm_settings
 from .output import evidence_pdf, excel
-from .plan.coverage import allocate
+from .plan import calibrate
+from .plan.coverage import allocate, largest_remainder
 from .plan.slots import build_slots
 from .store import Project, set_last_project
 
@@ -66,7 +67,12 @@ def main(argv=None):
         else:
             alloc = allocate(pages, args.total)
         start = sum(len(b["slots"]) for b in p.batches()) + 1
-        slots = build_slots(pages, alloc, opts, start_index=start, seed=start)
+        diff_counts = None
+        if opts.get("difficulty_calibrate", True):  # 난이도 보정 출제(plan/calibrate.py) — 대시보드와 같게
+            n = sum(alloc.values())
+            diff_counts = calibrate.plan(n, opts["difficulty_pct"], largest_remainder(n, opts["type_pct"]),
+                                         calibrate.table()[0])
+        slots = build_slots(pages, alloc, opts, difficulty_counts=diff_counts, start_index=start, seed=start)
         b = start_batch(p, s, slots, opts, kind="initial", background=False)
         print(json.dumps(p.read_progress(b), ensure_ascii=False, indent=1))
     elif args.cmd == "export":

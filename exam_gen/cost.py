@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import datetime
 
 from .config import PROJECTS_DIR
@@ -16,6 +17,9 @@ from .config import PROJECTS_DIR
 DEFAULT_USD_PER_SLOT = {"claude_agent_sdk": 0.30, "anthropic": 0.30, "openai_compat": 0.30, "codex_cli": 0.0, "mock": 0.0}
 DEFAULT_SEC_PER_SLOT = {"claude_agent_sdk": 23, "anthropic": 23, "openai_compat": 53, "codex_cli": 45, "mock": 0.5}
 SUBSCRIPTION = ("claude_agent_sdk", "codex_cli")
+# 상·최상 슬롯은 사례형·재출제가 많아 더 오래 걸린다: 2026-10-28 상·최상만 20슬롯 20.2분(병렬 3) → 슬롯당 약 60초,
+# 보통 혼합(상·최상 20%)은 약 23초. 난이도 보정으로 늘어난 상·최상 슬롯 하나당 약 37초를 더한다
+HARD_EXTRA_SEC = 37
 
 
 def history() -> dict[str, dict]:
@@ -35,6 +39,10 @@ def history() -> dict[str, dict]:
                 sec = (datetime.fromisoformat(pr["updated"]) - datetime.fromisoformat(pr["started"])).total_seconds()
                 if slots < 5 or sec <= 0:
                     continue
+                # 상·최상이 보통(20%)보다 많은 배치는 그만큼 걸린 시간을 빼서 보통 혼합 기준으로 맞춘다(난이도 보정 시간은 따로 더함)
+                hard = _hard_slots(runs.parent, f.name)
+                if hard is not None:
+                    sec = max(sec * 0.3, sec - max(0.0, hard - 0.2 * slots) * HARD_EXTRA_SEC)
                 h = out.setdefault(prov, {"slots": 0, "usd": 0.0, "sec": 0.0, "tokens": 0, "batches": 0})
                 h["slots"] += slots
                 h["usd"] += pr["usage"].get("cost_usd", 0.0)
@@ -44,6 +52,17 @@ def history() -> dict[str, dict]:
             except (OSError, ValueError, KeyError):
                 continue
     return out
+
+
+def _hard_slots(pdir, progress_name: str) -> int | None:
+    """배치의 상·최상 슬롯 수(문항 DB의 batches 표). 읽지 못하면 None."""
+    try:
+        n = int(progress_name.split("_")[0].removeprefix("batch"))
+        with sqlite3.connect(pdir / "items.sqlite") as c:
+            row = c.execute("SELECT slots FROM batches WHERE batch=?", (n,)).fetchone()
+        return sum(1 for sl in json.loads(row[0]) if sl.get("difficulty") in ("최상", "상")) if row else None
+    except (OSError, ValueError, sqlite3.Error, TypeError):
+        return None
 
 
 def estimate(settings, n_slots: int) -> dict:
@@ -68,3 +87,9 @@ def estimate(settings, n_slots: int) -> dict:
     minutes = sec_per_slot * n_slots * (3 / workers) / 60  # 실측은 병렬 3 기준
     return {"usd": round(usd, 1), "minutes": round(minutes), "basis": " · ".join(basis),
             "subscription": all(p in SUBSCRIPTION for p in set(roles))}
+
+
+def hard_extra_minutes(extra_hard_slots: int, settings) -> int:
+    """난이도 보정으로 기본 비율보다 늘어난 상·최상 슬롯 수만큼 더 걸리는 시간(분)."""
+    workers = max(1, getattr(settings, "workers", 3))
+    return round(max(0, extra_hard_slots) * HARD_EXTRA_SEC * (3 / workers) / 60)

@@ -7,9 +7,10 @@ import streamlit as st
 
 from exam_gen import ui
 from exam_gen.config import criteria
-from exam_gen.cost import estimate
+from exam_gen.cost import estimate, hard_extra_minutes
 from exam_gen.generate.generator import start_batch
 from exam_gen.llm import settings as llm_settings
+from exam_gen.plan import calibrate
 from exam_gen.plan.coverage import allocate, largest_remainder
 from exam_gen.plan.slots import build_slots, check_options, summarize
 
@@ -65,17 +66,22 @@ with st.container(border=True):
         st.caption("급할 때만 사용합니다. 형식·원고 근거 대조·규칙·중복 검사는 그대로 하지만, **정답 오류·이의 제기·함정 모순은 확인하지 "
                    "않습니다.** 시간·AI 사용량이 약 1/3로 줄고, 문항은 'AI 검증 생략'으로 표시됩니다. 나중에 품질 리포트·검수 화면에서 "
                    "'생략한 AI 검증'을 실행하면 일반 문항과 같아집니다.")
+        calib = st.checkbox("난이도 보정 출제 (권장)", value=bool(opts.get("difficulty_calibrate", True)))
+        st.caption("AI 검수는 출제 의도보다 난이도를 한 단계 낮게 판정하는 경향이 있습니다(실측: '상'으로 낸 문항의 약 90%가 '중'). "
+                   "켜 두면 그만큼 어려운 문항을 더 배정해, **검수 판정 기준으로** 위 난이도 비율에 가깝게 나오도록 합니다. "
+                   "출력할 때 '최종 문항 자동 선정'이 판정 난이도로 비율을 맞춥니다. 끄면 위 비율 그대로 출제 지시합니다.")
         topup = st.checkbox("난이도 보충 출제 — 실제 난이도(검수 판정)가 목표보다 모자라면 배치 끝에 한 번 더 출제",
                             value=bool(opts.get("difficulty_topup", False)),
                             help="실측(30문항): 보충 14문항 중 8문항이 다시 '하'로 판정되어 효과는 낮고 사용량은 약 47% 늘었습니다. 기본은 끕니다.")
 
 new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct": pos, "combo_pct": combo,
-            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup,
+            "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup, "difficulty_calibrate": calib,
             "fast_mode": fast}
 
 # ---------- 수량과 페이지 할당 ----------
 st.subheader(":material/grid_view: 문항 수와 페이지 배분")
 diff_counts = None
+how = None
 if mode == "최초 출제":
     c1, c2 = st.columns(2)
     total = c1.number_input("필요 문항 수", 1, 3000, int(opts["total"]))
@@ -116,6 +122,22 @@ if forced:
 else:
     ui.bar_chart(df, "책 쪽수", ["기존 문항", "이번 출제"], stack=True, height=260)
 
+# ---------- 난이도 보정: 목표(판정 기준) → 출제 지시 난이도 ----------
+@st.cache_data(ttl=300, show_spinner=False)
+def _calib_table():
+    return calibrate.table()  # 모든 프로젝트 문항을 읽으므로 5분 동안 재사용
+
+
+
+calib_info = None
+if calib and n:
+    explicit = mode == "추가 출제" and how == "난이도별 수량"
+    target_pct = {lv: diff_counts.get(lv, 0) * 100 / n for lv in LV} if explicit else dpct
+    tab, n_hist = _calib_table()
+    diff_counts = calibrate.plan(n, target_pct, largest_remainder(n, tpct), tab)
+    calib_info = {"goal": {lv: n * target_pct.get(lv, 0) / 100 for lv in LV},
+                  "expected": calibrate.expected(diff_counts, tab), "history": sum(n_hist.values())}
+
 # ---------- 설정 검사 (Codex C12·C13) ----------
 problems = check_options(new_opts, n if diff_counts is not None else None, diff_counts)
 est, sm = {}, {}
@@ -143,7 +165,7 @@ if n and not problems:
                                                        if mode == "최초 출제" else "이번 배치"),
                             ("페이지", len(sm["pages"]), f"전체 {len(elig)}쪽"),
                             ("페이지당", f"{min(pc)}~{max(pc)}", "문항")])
-    _mix(c[1], "난이도 구성", [(k, k) for k in LV], sm["difficulty"])
+    _mix(c[1], "출제 지시 난이도" if calib_info else "난이도 구성", [(k, k) for k in LV], sm["difficulty"])
     _mix(c[2], "유형 구성", [(k, ui.TYPE_KO[k]) for k in C["type_order"]], sm["type"])
     pos_txt = " ".join(f"{'①②③④'[int(k) - 1]} {v}" for k, v in sorted(sm["answer"].items()) if k.isdigit())
     pol = sm.get("polarity", {})
@@ -151,7 +173,20 @@ if n and not problems:
                f"(목표 8 : 2, 조합형은 옳은 것에 포함)** · "
                f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
                f"조합형 {sm['combo']} · 유형별 난이도: 단답형은 하·중, 진위형은 상까지(상은 정답 X)")
+    if calib_info:
+        g, e = calib_info["goal"], calib_info["expected"]
+        st.info("**난이도 보정 출제** — 검수 판정 기준 목표 " + " · ".join(f"{lv} {g[lv]:.0f}" for lv in LV)
+                + " → 위처럼 출제를 지시하면 예상 판정 " + " · ".join(f"{lv} {e[lv]:.0f}" for lv in LV) + ". "
+                + ("판정 비율은 개발 시험 실측" if calib_info["history"] < 20 else
+                   f"판정 비율은 이 PC 출제 기록 {calib_info['history']}문항과 개발 시험 실측")
+                + "으로 계산합니다."
+                + (f" **최상은 예상 {e['최상']:.0f}문항으로 목표에 못 미칩니다** — 최상 기준은 담당자와 협의 중입니다."
+                   if g["최상"] >= 1 and e["최상"] < g["최상"] * 0.8 else ""), icon=":material/tune:")
     est = estimate(llm_settings.load(), sm["total"])
+    if calib_info:  # 보정으로 늘어난 상·최상 슬롯은 더 오래 걸린다
+        base = largest_remainder(n, dpct)
+        more = (sm["difficulty"].get("최상", 0) + sm["difficulty"].get("상", 0)) - (base.get("최상", 0) + base.get("상", 0))
+        est = {**est, "minutes": est["minutes"] + hard_extra_minutes(more, llm_settings.load())}
     if new_opts.get("fast_mode"):  # AI 검증(G4·G5) 생략 — 실측 호출의 약 1/3(추정)
         est = {**est, "usd": round(est["usd"] / 3, 1), "minutes": max(1, round(est["minutes"] / 3)),
                "basis": est["basis"] + " · 빠른 출제(AI 검증 생략) 추정 1/3"}
@@ -188,6 +223,7 @@ with st.container(border=True):
         rows.append((True, "예상 시간·사용량", f"{sm['total']}문항 · {t} · {use} — "
                                             + ("이 PC에서 지금까지 출제한 실측 기준" if "실측" in est["basis"]
                                                else "개발 시험 출제 실측 기준(Opus 5.5, 32문항 약 12분)")
+                                            + (", 난이도 보정으로 늘어난 상·최상 문항은 문항당 약 1분" if calib_info else "")
                                             + "이며, 다시 출제하는 문항이 많으면 늘어납니다. 끝나면 윈도우 알림이 뜹니다."))
     for ok, name, detail in rows:
         mark = (":green[:material/check_circle:]" if ok else ":orange[:material/error:]" if ok is None

@@ -212,3 +212,25 @@ def test_mock_pipeline_and_evidence_pdf(sample_project, tmp_path):
     assert r["no_highlight"] == []
     doc = pymupdf.open(r["path"])
     assert sum(1 for pg in doc for _ in pg.annots()) > 0
+
+
+def test_difficulty_calibration_plan():
+    """난이도 보정 출제: 판정이 한 단계 낮아지는 표에서는 어려운 슬롯을 더 배정하고, 유형별 허용 난이도를 넘지 않는다."""
+    from exam_gen.plan import calibrate
+    from exam_gen.plan.coverage import largest_remainder
+    from exam_gen.plan.slots import joint_allocation
+    tab = calibrate.default_table()
+    target = {"최상": 5, "상": 15, "중": 60, "하": 20}
+    tc = largest_remainder(315, {"mcq": 50, "ox": 30, "short": 20})
+    plan = calibrate.plan(315, target, tc, tab)
+    assert sum(plan.values()) == 315
+    assert plan["최상"] + plan["상"] > 315 * 0.20          # 보정 없이 20%보다 많이 배정
+    assert plan["최상"] <= 315 * 0.2 + 1                   # 최상 슬롯 상한(시간)
+    joint_allocation(tc, plan)                              # 유형별 허용 난이도 안에서 배정 가능
+    e = calibrate.expected(plan, tab)
+    for lv in ("상", "중", "하"):                           # 판정 기준으로 목표의 90% 이상
+        assert e[lv] >= 315 * target[lv] / 100 * 0.9
+    # 판정이 그대로인 표라면 목표 비율 그대로 배정
+    same = {s: {a: 1.0 if a == s else 0.0 for a in calibrate.LEVELS} for s in calibrate.LEVELS}
+    assert calibrate.plan(100, target, largest_remainder(100, {"mcq": 50, "ox": 30, "short": 20}), same) == \
+        {"최상": 5, "상": 15, "중": 60, "하": 20}

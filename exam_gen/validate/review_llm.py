@@ -1,6 +1,7 @@
 """G5 LLM 검수 — 지침 [8] 검토 항목 + 평가문항 출제 유의사항 체크리스트."""
 from __future__ import annotations
 
+from .. import difficulty_policy
 from ..llm.prompts import render
 from .schema import REVIEW_BLOCKING, REVIEW_CHECKS, REVIEW_SCHEMA, TRAP_VERDICTS, false_targets
 from .solver import ask_until_complete, excerpt, present
@@ -18,7 +19,8 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
         user = ("# 학습목표\n" + (objectives or "(제공되지 않음)") + "\n\n# 원고 발췌\n" + excerpt(project, sub_items)
                 + "\n\n# 문항 (정답·해설·근거 포함)\n"
                 + "\n\n".join(present(it, i, with_key=True) for it, i in zip(sub_items, sub_ids)))
-        return client.structured(render("review_system.j2"), user, REVIEW_SCHEMA, model=settings.model_review,
+        return client.structured(render("review_system.j2", rubric=difficulty_policy.rubric(),
+                                        policy_status=_policy_status()), user, REVIEW_SCHEMA, model=settings.model_review,
                                  task="review", context={"items": sub_items, "ids": sub_ids})
 
     res = ask_until_complete(call, items, ids)
@@ -88,13 +90,20 @@ def _trap_fails(item: dict, traps) -> list[str]:
     return out
 
 
+def _policy_status() -> str:
+    p = difficulty_policy.load()
+    return "담당자 확정 기준" if p["status"] == "확정" else "임시 기준안 — 담당자 확인 전"
+
+
 def relabel_difficulty(item: dict) -> None:
     """G5 판정 난이도가 표시와 한 단계 다르면 그 난이도로 매긴다. 슬롯 목표는 difficulty_target에 남긴다."""
     item["difficulty_target"] = item.get("difficulty_target") or item["slot"]["difficulty"]
     lv = (item["validation"].get("G5") or {}).get("assessed_difficulty")
     warns = [w for w in item["validation"].get("warnings", []) if not w.startswith(("G5[난이도] 표시", "난이도 재분류"))]
-    if lv in LEVELS and lv != item["difficulty"]:
-        item["difficulty"] = lv
+    item["difficulty"] = lv if lv in LEVELS else item["difficulty_target"]
+    human = (item.get("human_difficulty") or {}).get("level")
+    if human in LEVELS:  # 담당자가 판정한 난이도가 AI 판정보다 우선한다
+        item["difficulty"] = human
     if item["difficulty"] != item["difficulty_target"]:
         warns.append(f"난이도 재분류: 목표 '{item['difficulty_target']}' → 실제 '{item['difficulty']}'")
     item["validation"]["warnings"] = warns

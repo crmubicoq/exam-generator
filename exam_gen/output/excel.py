@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from .. import difficulty_policy
 from ..config import TEMPLATE_XLSX, criteria, type_name
 from ..ingest.page_map import format_pages
 from ..plan.coverage import coverage_stats
@@ -205,6 +206,11 @@ def _report(ws, project, items_all, final):
     rows += [["최종 출력 문항", len(final)], []]
     opts = {**criteria()["defaults"], **project.meta.get("options", {})}
     n = len(final) or 1
+    pol = difficulty_policy.load()
+    human_n = sum(1 for it in final if (it.get("human_difficulty") or {}).get("level"))
+    rows.append(["난이도 기준", ("담당자 확정 기준" if pol["status"] == "확정" else "임시 기준안(담당자 확인 전)")
+                 + f" · {pol.get('version', '')}",
+                 f"실제 난이도 = 담당자 판정 {human_n}문항, 나머지는 AI 검수 판정"])
     rows.append(["난이도", "목표 %", "실제 수", "실제 %"])
     dc = Counter(it.get("difficulty") for it in final)
     for d in criteria()["difficulty_levels"]:

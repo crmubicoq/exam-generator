@@ -39,8 +39,8 @@ EXTRA_CATS = {"polish": "보기 다듬기(참고)", "freshness": "시의성 확�
 
 
 def actual_difficulty(it: dict) -> str:
-    """실제 난이도 = 검수(G5) 판정. 판정이 없으면 표시 난이도."""
-    lv = (it["validation"].get("G5") or {}).get("assessed_difficulty")
+    """실제 난이도 = 담당자 판정 > 검수(G5) 판정 > 표시 난이도."""
+    lv = (it.get("human_difficulty") or {}).get("level") or (it["validation"].get("G5") or {}).get("assessed_difficulty")
     return lv if lv in LEVELS else it["difficulty"]
 
 

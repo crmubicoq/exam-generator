@@ -5,7 +5,7 @@ from collections import Counter
 import pandas as pd
 import streamlit as st
 
-from exam_gen import ui
+from exam_gen import difficulty_policy, ui
 from exam_gen.config import criteria
 from exam_gen.cost import estimate, hard_extra_minutes
 from exam_gen.generate.generator import start_batch
@@ -207,6 +207,10 @@ with st.container(border=True):
              f"{chasi_n}개 차시" + ("" if chasi_n > 1 or len(elig) <= 15 else " — 원고가 여러 차시라면 원고 등록 ③에서 나눠 주세요")),
             (bool(meta.get("objectives")) or None, "학습목표",
              "입력됨" if meta.get("objectives") else "없음(권장) — 원고 등록 ④에서 넣으면 중요한 내용 위주로 출제합니다")]
+    _pol = difficulty_policy.load()
+    rows.append((_pol["status"] == "확정" or None, "난이도 기준",
+                 f"담당자 확정 기준({_pol.get('confirmed_by') or ''})" if _pol["status"] == "확정" else
+                 "임시 기준안(담당자 확인 전) — 관리 → 난이도 기준에서 확인·확정할 수 있습니다"))
     P = llm_settings.PROVIDERS
 
     def _ai(role):

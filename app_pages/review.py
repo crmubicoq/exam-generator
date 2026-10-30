@@ -204,6 +204,22 @@ with right:
             p.save_item(_it, "final_select_manual", {"selected": _sel})
             st.rerun()
 
+    # --- 담당자 판정 난이도 — AI 판정보다 우선, 쌓이면 난이도 보정이 담당자 기준으로 맞춰진다 ---
+    _hd = (saved.get("human_difficulty") or {}).get("level")
+    _ai = (saved["validation"].get("G5") or {}).get("assessed_difficulty") or "판정 없음"
+    h1, h2 = st.columns([3.2, 2.8], vertical_alignment="center")
+    _pick = h1.segmented_control("담당자 판정 난이도", ["하", "중", "상", "최상"], default=_hd,
+                                 key=f"hd_{saved['key']}_{_hd}",
+                                 help="이 문항의 난이도를 직접 정합니다. 다시 누르면 지워지고 AI 판정으로 돌아갑니다. "
+                                      "문항 내용은 바뀌지 않으므로 승인은 그대로 유지됩니다.")
+    h2.caption(f"AI 판정 **{_ai}** · 출제 목표 **{saved.get('difficulty_target') or saved['slot']['difficulty']}**"
+               + (f" · 담당자 판정 **{_hd}** ({saved['human_difficulty'].get('by') or '이름 없음'})" if _hd else "")
+               + "  \n기준은 관리 → 난이도 기준에서 봅니다.")
+    if _pick != _hd:
+        review_ops.set_human_difficulty(p, saved["key"], _pick, who)
+        st.session_state["review_flash"] = f"{saved['key']} 담당자 판정 난이도: {_pick or '지움(AI 판정)'}"
+        st.rerun()
+
     # --- 원고 변경 표시 ---
     ms = saved["validation"].get("ms_change")
     if ms:

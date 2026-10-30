@@ -234,3 +234,27 @@ def test_difficulty_calibration_plan():
     same = {s: {a: 1.0 if a == s else 0.0 for a in calibrate.LEVELS} for s in calibrate.LEVELS}
     assert calibrate.plan(100, target, largest_remainder(100, {"mcq": 50, "ox": 30, "short": 20}), same) == \
         {"최상": 5, "상": 15, "중": 60, "하": 20}
+
+
+def test_difficulty_policy_and_human_judgment(tmp_path, monkeypatch):
+    """난이도 기준: 기본은 임시 기준안, 담당자가 확정하면 출제·검수 프롬프트에 들어간다. 담당자 판정 난이도가 AI 판정보다 우선."""
+    from exam_gen import difficulty_policy as DP
+    from exam_gen.llm.prompts import render
+    from exam_gen.quality_report import actual_difficulty
+    from exam_gen.validate import review_llm
+    monkeypatch.setattr(DP, "PATH", tmp_path / "difficulty_policy.json")
+    assert DP.load()["status"] == "임시" and "(적용)" in DP.rubric()["상"]
+    lv = {**DP.rubric(), "상": "담당자 지침: 두 개념을 상황에 적용"}
+    DP.save(lv, "확정", "담당자", "평가 지침")
+    assert DP.load()["status"] == "확정" and DP.version().startswith("확정")
+    assert "담당자 지침: 두 개념을 상황에 적용" in render("generate_system.j2", rubric=DP.rubric())
+    assert "담당자 지침: 두 개념을 상황에 적용" in render("review_system.j2", rubric=DP.rubric(), policy_status="담당자 확정 기준")
+    it = {"slot": {"difficulty": "상"}, "difficulty": "상", "validation": {"G5": {"assessed_difficulty": "중"}, "warnings": []}}
+    review_llm.relabel_difficulty(it)
+    assert it["difficulty"] == "중" and actual_difficulty(it) == "중"
+    it["human_difficulty"] = {"level": "상", "by": "담당자"}
+    review_llm.relabel_difficulty(it)
+    assert it["difficulty"] == "상" and actual_difficulty(it) == "상"
+    it.pop("human_difficulty")
+    review_llm.relabel_difficulty(it)
+    assert it["difficulty"] == "중"

@@ -37,7 +37,9 @@ def history_counts(projects_dir=None) -> dict[str, Counter]:
         except Exception:  # noqa: BLE001 — 손상된 프로젝트는 건너뛴다
             continue
         for it in items:
-            lv = ((it.get("validation") or {}).get("G5") or {}).get("assessed_difficulty")
+            # 담당자가 판정한 문항은 그 판정을 쓴다 — 담당자 판정이 쌓일수록 보정이 담당자 기준으로 맞춰진다
+            lv = ((it.get("human_difficulty") or {}).get("level")
+                  or ((it.get("validation") or {}).get("G5") or {}).get("assessed_difficulty"))
             slot_lv = (it.get("slot") or {}).get("difficulty")
             if lv in LEVELS and slot_lv in LEVELS and (it.get("gen") or {}).get("prompt_version", "") >= since:
                 out[slot_lv][lv] += 1

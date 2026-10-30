@@ -175,6 +175,7 @@ FLOW_MENU = [
 MANAGE_MENU = [
     ("app_pages/quality.py", "analytics", "품질 리포트"),
     ("app_pages/appeal.py", "gavel", "이의신청 조회"),
+    ("app_pages/difficulty.py", "school", "난이도 기준"),
     ("app_pages/projects.py", "folder_managed", "프로젝트 관리"),
 ]
 

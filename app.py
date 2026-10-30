@@ -18,7 +18,8 @@ PAGES = {
     "검수·출력": [st.Page("app_pages/quality.py", title="품질 리포트", icon=":material/analytics:"),
                  st.Page("app_pages/review.py", title="검수", icon=":material/fact_check:"),
                  st.Page("app_pages/export.py", title="출력", icon=":material/download:"),
-                 st.Page("app_pages/appeal.py", title="이의신청 조회", icon=":material/gavel:")],
+                 st.Page("app_pages/appeal.py", title="이의신청 조회", icon=":material/gavel:"),
+                 st.Page("app_pages/difficulty.py", title="난이도 기준", icon=":material/school:")],
 }
 
 # 메뉴는 사이드바에 진행 순서대로 직접 그린다(ui._step_menu) — 기본 메뉴는 숨긴다

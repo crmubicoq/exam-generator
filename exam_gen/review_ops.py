@@ -173,3 +173,15 @@ def rerun_llm_gates(project: Project, settings, key: str) -> dict:
             item["status"] = "warn" if item["validation"]["warnings"] else "auto_pass"
     project.save_item(item, "llm_recheck", {"fails": item["validation"]["fails"]})
     return item
+
+
+def set_human_difficulty(project: Project, key: str, level: str | None, who: str = "") -> dict:
+    """담당자 판정 난이도를 기록한다(None이면 지우고 AI 판정으로 되돌림). 문항 내용은 바뀌지 않아 승인은 유지된다."""
+    item = project.item(key)
+    if level:
+        item["human_difficulty"] = {"level": level, "by": who, "at": now()}
+    else:
+        item.pop("human_difficulty", None)
+    review_llm.relabel_difficulty(item)
+    project.save_item(item, "human_difficulty", {"level": level, "by": who})
+    return item

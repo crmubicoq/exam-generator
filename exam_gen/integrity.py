@@ -49,7 +49,7 @@ def block_reasons(item: dict) -> list[str]:
     if v.get("fails"):
         out += v["fails"]
     if v.get("llm_stale") or (v.get("verified") or {}).get("hash") != content_hash(item):
-        out.append("현재 내용에 대한 G4·G5 검증 기록이 없음 — 'LLM 재검증'을 먼저 실행")
+        out.append("현재 내용에 대한 AI 검증(G4·G5) 기록이 없음 — 'AI 재검증'을 먼저 누르세요")
     if not item.get("source_pages"):
         out.append("원고에서 확인된 근거가 없음")
     return out

@@ -107,7 +107,7 @@ def flow(p: Project | None):
         elif not batches:
             nxt = ("**출제 옵션**에서 문항 수와 난이도 비율을 정하고 '출제 시작'을 누르세요.", "app_pages/options.py", "tune")
         elif state["progress"] == DOING:
-            nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항 기준 약 3시간 40분, 난이도 보정 출제 포함 추정).",
+            nxt = ("출제가 진행 중입니다. **출제 진행**에서 진행률과 예상 남은 시간을 볼 수 있습니다(300문항+여유 15% 기준 약 3시간 15분, 난이도 보정 출제 포함 실측 추정).",
                    "app_pages/progress.py", "autorenew")
         elif any(s in ("stopped", "partial", "error", "orphan") for s in states):
             nxt = ("중단되거나 일부만 끝난 출제가 있습니다. **출제 진행**에서 '이어서 출제'를 누르세요.",

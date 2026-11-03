@@ -6,6 +6,8 @@
 방법
 1. 판정 비율표(슬롯 난이도 → 실제 판정 난이도 확률)를 만든다. 이 PC의 출제 기록(G5 판정이 있는 문항)이 있으면
    criteria.yaml의 기본표(개발 시험 실측)와 섞어 쓴다 — 기록이 쌓일수록 기록 쪽 비중이 커진다.
+   지침이 바뀌면 판정 비율도 바뀌므로(2026-10-30: 상 슬롯 '상' 판정 6% → 30%) 현재 프롬프트 버전 문항을 1,
+   이전 버전 문항을 old_weight(기본 0.25)로 센다.
 2. 슬롯 수만큼 하나씩, '예상 판정 분포'가 목표에 가장 가까워지는 난이도의 슬롯을 더한다(모자람을 넘침보다 무겁게 본다).
    유형별 허용 난이도(최상은 선다형만, 상은 선다형·진위형만)를 넘지 않는다.
 3. 출제가 끝나면 최종 문항 자동 선정(select_final)이 실제 판정 난이도로 목표 비율에 맞춰 고른다.
@@ -16,7 +18,7 @@ import math
 
 from collections import Counter, defaultdict
 
-from ..config import PROJECTS_DIR, criteria
+from ..config import PROJECTS_DIR, PROMPT_VERSION, criteria
 from .slots import ALLOWED, LEVELS
 
 PRIOR_WEIGHT = 20  # 기본표를 문항 20개 분량의 기록으로 본다
@@ -27,9 +29,11 @@ def default_table() -> dict[str, dict[str, float]]:
 
 
 def history_counts(projects_dir=None) -> dict[str, Counter]:
-    """이 PC 출제 기록에서 슬롯 난이도별 실제 판정 개수. 기준 프롬프트 버전 이후 문항만 센다."""
+    """이 PC 출제 기록에서 슬롯 난이도별 실제 판정 개수(가중). 기준 프롬프트 버전 이후 문항만 센다.
+    현재 프롬프트 버전 문항은 1, 이전 버전 문항은 old_weight로 센다."""
     from ..store import Project, list_projects  # 순환 import 방지
-    since = criteria()["difficulty_calibration"].get("since", "")
+    cal = criteria()["difficulty_calibration"]
+    since, old_w = cal.get("since", ""), float(cal.get("old_weight", 0.25))
     out: dict[str, Counter] = defaultdict(Counter)
     for slug in list_projects():
         try:
@@ -41,8 +45,9 @@ def history_counts(projects_dir=None) -> dict[str, Counter]:
             lv = ((it.get("human_difficulty") or {}).get("level")
                   or ((it.get("validation") or {}).get("G5") or {}).get("assessed_difficulty"))
             slot_lv = (it.get("slot") or {}).get("difficulty")
-            if lv in LEVELS and slot_lv in LEVELS and (it.get("gen") or {}).get("prompt_version", "") >= since:
-                out[slot_lv][lv] += 1
+            pv = (it.get("gen") or {}).get("prompt_version", "")
+            if lv in LEVELS and slot_lv in LEVELS and pv >= since:
+                out[slot_lv][lv] += 1.0 if pv == PROMPT_VERSION else old_w
     return out
 
 
@@ -54,7 +59,7 @@ def table(use_history: bool = True) -> tuple[dict[str, dict[str, float]], dict[s
     for s in LEVELS:
         cnt = hist.get(s, Counter())
         n = sum(cnt.values())
-        n_hist[s] = n
+        n_hist[s] = round(n)
         row = {a: (base.get(s, {}).get(a, 0.0) * PRIOR_WEIGHT + cnt.get(a, 0)) / (PRIOR_WEIGHT + n) for a in LEVELS}
         tot = sum(row.values()) or 1.0
         tab[s] = {a: v / tot for a, v in row.items()}
@@ -75,6 +80,11 @@ def plan(n: int, target_pct: dict[str, int], type_counts: dict[str, int],
     counts = {lv: 0 for lv in LEVELS}
     # 최상(사례형) 슬롯은 '상'의 주된 공급원이지만(실측 93%가 상) 출제 시간이 길어(문항당 약 1분) 전체의 20%까지만 쓴다
     cap_top = min(cap_mcq, math.ceil(0.2 * n)) if goal["최상"] + goal["상"] > 0 else 0
+    # 보정 폭 안전장치(2026-11-03) — 기대값만 보면 '상 슬롯 65%, 최상 0'처럼 지시 분포가 극단으로 간다.
+    # ① 최상 슬롯은 목표 수만큼은 둔다(담당자 합의: 최상 = 자격시험형 사례 문항)
+    # ② 상·최상 슬롯 합은 목표의 2배까지만 — 판정 기준은 담당부서가 정하므로 보정은 한 단계 정도만 한다
+    min_top = min(cap_top, round(goal["최상"]))
+    cap_hard = min(cap_hard, max(min_top, math.ceil(2 * (goal["최상"] + goal["상"]))))
 
     def loss(c):
         e = expected(c, tab)
@@ -82,7 +92,8 @@ def plan(n: int, target_pct: dict[str, int], type_counts: dict[str, int],
         w = {"최상": 3.0, "상": 2.0, "중": 1.0, "하": 1.0}
         return sum(w[lv] * max(0.0, goal[lv] - e[lv]) ** 2 + 0.3 * max(0.0, e[lv] - goal[lv]) ** 2 for lv in LEVELS)
 
-    for _ in range(n):
+    counts["최상"] = min_top
+    for _ in range(n - min_top):
         best, best_loss = None, None
         for lv in LEVELS:
             c = {**counts, lv: counts[lv] + 1}

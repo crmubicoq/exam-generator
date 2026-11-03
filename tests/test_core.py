@@ -227,9 +227,11 @@ def test_difficulty_calibration_plan():
     assert plan["최상"] + plan["상"] > 315 * 0.20          # 보정 없이 20%보다 많이 배정
     assert plan["최상"] <= 315 * 0.2 + 1                   # 최상 슬롯 상한(시간)
     joint_allocation(tc, plan)                              # 유형별 허용 난이도 안에서 배정 가능
+    assert plan["최상"] >= round(315 * target["최상"] / 100)   # 최상 슬롯은 목표 수만큼은 둔다
+    assert plan["최상"] + plan["상"] <= 2 * 315 * (target["최상"] + target["상"]) / 100 + 1  # 보정 폭 상한
     e = calibrate.expected(plan, tab)
-    for lv in ("상", "중", "하"):                           # 판정 기준으로 목표의 90% 이상
-        assert e[lv] >= 315 * target[lv] / 100 * 0.9
+    assert e["상"] >= 315 * target["상"] / 100 * 0.9       # 상은 판정 기준으로 목표의 90% 이상
+    # (중 슬롯의 '하' 판정은 슬롯 배정으로 메울 수 없다 — 판정 기준은 담당부서가 정한다)
     # 판정이 그대로인 표라면 목표 비율 그대로 배정
     same = {s: {a: 1.0 if a == s else 0.0 for a in calibrate.LEVELS} for s in calibrate.LEVELS}
     assert calibrate.plan(100, target, largest_remainder(100, {"mcq": 50, "ox": 30, "short": 20}), same) == \

@@ -259,16 +259,21 @@ def settings_box():
         ak, bu, ok = s.anthropic_api_key, s.openai_base_url, s.openai_api_key
         if "anthropic" in used:
             ak = st.text_input("Anthropic API 키", value=s.anthropic_api_key, type="password",
-                               help="Windows 자격 증명 저장소에 보관된다. 비워 두면 환경변수 ANTHROPIC_API_KEY 사용")
+                               help="Windows 자격 증명 저장소에 보관됩니다. 비워 두면 환경변수 ANTHROPIC_API_KEY를 씁니다.")
         if "openai_compat" in used:
             bu = st.text_input("LiteLLM 주소", value=s.openai_base_url, placeholder="http://192.168.x.x:4000")
             ok = st.text_input("API 키", value=s.openai_api_key, type="password", help="Windows 자격 증명 저장소에 보관됩니다")
         if used & set(llm_settings.OAUTH_PROVIDERS):
-            st.caption("구독 로그인(OAuth) 방식은 이 PC의 CLI 로그인 정보를 쓴다 — Claude: Claude Code에서 `/login`, "
-                       "Codex: 'Codex_로그인.bat'을 실행합니다. 이 도구는 로그인 토큰을 저장하지 않습니다.")
-        c1, c2 = st.columns(2)
-        chunk = c1.number_input("AI 한 번에 만드는 문항 수", 1, 20, s.chunk_size, help="AI 응답이 잘리면 줄입니다")
-        workers = c2.number_input("병렬 페이지", 1, 8, s.workers)
+            st.caption("구독 로그인 방식은 이 PC에 로그인한 계정을 씁니다. Claude는 'Claude_로그인.bat', "
+                       "Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. 이 도구는 로그인 정보를 저장하지 않습니다.")
+        st.markdown("**출제 속도 설정**")
+        st.caption("문항 내용·품질에는 영향이 없습니다. 보통은 기본값(8 · 3) 그대로 둡니다.")
+        chunk = st.number_input("AI 한 번에 만드는 문항 수 (기본 8)", 1, 20, s.chunk_size)
+        st.caption("한 페이지에 배정된 문항을 AI에 몇 개씩 묶어 요청할지 정합니다. 페이지당 1~2문항이 보통이라 거의 영향이 없습니다. "
+                   "'AI 응답이 잘렸다'는 오류가 날 때만 줄이세요.")
+        workers = st.number_input("병렬 페이지 (기본 3)", 1, 8, s.workers)
+        st.caption("동시에 출제할 페이지 수입니다. 예상 시간은 3 기준 실측입니다. 올리면 빨라질 수 있지만 AI 사용 한도에 "
+                   "더 빨리 걸릴 수 있고, 내리면 느려지는 대신 한도에 덜 걸립니다.")
         if provider == "mock":
             st.caption("데모 모드: 원고 문장으로 모의 문항을 만듭니다. 화면 흐름 확인용이며 납품에 쓰지 않습니다.")
         b1, b2 = st.columns(2)

@@ -25,7 +25,8 @@ GRADE_RULES = {
     "accuracy": ("정답 정확성", "검수에서 정답 오류를 지적받은 문항 비율", [0.0, 0.03, 0.08]),
     "dispute": ("이의 제기 여지", "학습자가 다른 답을 주장할 여지를 지적받은 문항 비율", [0.05, 0.15, 0.30]),
     "evidence": ("출처(근거)", "원문과 글자 단위로 일치하지 않는 근거 비율(L1·미매칭)", [0.05, 0.15, 0.30]),
-    "coverage": ("원고 전반 출제", "문항이 없는 출제 대상 페이지 비율", [0.0, 0.05, 0.15]),
+    "coverage": ("원고 전반 출제", "문항이 없는 출제 대상 페이지 비율 — 문항 수가 페이지 수보다 적어 생기는 빈 페이지는 빼고 센다",
+                 [0.0, 0.05, 0.15]),
     "format": ("형식·지침", "지침 형식 위반·경고가 있는 문항 비율", [0.05, 0.15, 0.30]),
     "discrimination": ("변별력(보기)", "검수 AI가 '정답 단서'로 지적한 보기·조합형 지름길 문항 비율 — 실제 응시 결과가 아니라 "
                        "경고 집계다('보완 권장' 경고는 제외, 구분 도입 전 출제분은 보기 경고 전체)", [0.10, 0.25, 0.40]),
@@ -74,7 +75,7 @@ def _issues(it: dict) -> dict[str, list[str]]:
             add("polish" if w.removeprefix("G5[보기]").strip().startswith("보완 권장") else "discrimination", w)
         elif w.startswith(_FORMAT_PREFIXES) or w.startswith(("G5[오타·비문]", "G5[조건 누락]", "G5[해설]")):
             add("format", w)
-    if it["type"] == "mcq" and not it["stem"].rstrip().endswith("?"):
+    if it["type"] == "mcq" and not rules._ends_with_question(it["stem"]):  # G3와 같은 기준(사례 블록·단서 괄호 인정)
         add("format", "선다형 발문이 질문형이 아님")
     if any(rules._LEAK.search(rules._QUOTED.sub("", t or "")) for _, t in rules._texts(it)):
         add("format", "'원고'·쪽수·절 번호 노출")
@@ -112,7 +113,8 @@ def analyze(p: Project, batch: int | None = None) -> dict:
         "accuracy": ratio("accuracy"),
         "dispute": ratio("dispute"),
         "evidence": (1 - ev.count("L2") / len(ev)) if ev else 1.0,
-        "coverage": len(cov["zero"]) / (len(elig) or 1),
+        # 100문항을 243쪽에 내면 143쪽은 비는 것이 당연하다 — 문항 수로 피할 수 없는 빈 페이지는 등급에서 뺀다(2026-11-03)
+        "coverage": max(0, len(cov["zero"]) - max(0, len(elig) - len(ok))) / (len(elig) or 1),
         "format": ratio("format"),
         "discrimination": ratio("discrimination"),
         "difficulty": tvd,

@@ -248,7 +248,7 @@ def test_difficulty_policy_and_human_judgment(tmp_path, monkeypatch):
     assert DP.load()["status"] == "임시" and "(적용)" in DP.rubric()["상"]
     lv = {**DP.rubric(), "상": "담당자 지침: 두 개념을 상황에 적용"}
     DP.save(lv, "확정", "담당자", "평가 지침")
-    assert DP.load()["status"] == "확정" and DP.version().startswith("확정")
+    assert DP.load()["status"] == "확정" and DP.version().startswith("공통·확정")
     assert "담당자 지침: 두 개념을 상황에 적용" in render("generate_system.j2", rubric=DP.rubric())
     assert "담당자 지침: 두 개념을 상황에 적용" in render("review_system.j2", rubric=DP.rubric(), policy_status="담당자 확정 기준")
     it = {"slot": {"difficulty": "상"}, "difficulty": "상", "validation": {"G5": {"assessed_difficulty": "중"}, "warnings": []}}
@@ -260,3 +260,40 @@ def test_difficulty_policy_and_human_judgment(tmp_path, monkeypatch):
     it.pop("human_difficulty")
     review_llm.relabel_difficulty(it)
     assert it["difficulty"] == "중"
+
+
+def test_chasi_detect_headings():
+    """차시 자동 제안: 큰 제목·첫 줄의 '제N절'만 차례 번호로 잡고, '제1절을 마치며'·본문 참조·부록 반복은 무시한다."""
+    from exam_gen.ingest.chasi_detect import detect
+
+    def ln(t, h=11, margin=False):
+        return {"text": t, "bbox": [0, 0, 100, h], "margin": margin}
+    body = [ln("본문 문장입니다.") for _ in range(5)]
+    pages = [
+        {"g": 0, "lines": [ln("표지")]},
+        {"g": 1, "lines": body + [ln("제1절 첫 단원", 16)]},
+        {"g": 2, "lines": body + [ln("제3절에서 다룬다", 11)]},  # 본문 참조(작은 글씨·첫 줄 아님)
+        {"g": 3, "lines": [ln("제1절을 마치며", 16)] + body},     # 조사가 붙은 맺음말
+        {"g": 4, "lines": [ln("제2절 둘째 단원", 16)] + body},
+        {"g": 5, "lines": [ln("제2절 머리말", 16, margin=True)] + body},
+        {"g": 6, "lines": [ln("제1절 — 부록 반복", 16)] + body},  # 번호가 차례가 아님
+    ]
+    d = detect(pages)
+    assert d["unit"] == "절" and [h["g"] for h in d["heads"]] == [1, 4]
+    assert detect([{"g": 0, "lines": body}]) is None
+
+
+def test_difficulty_policy_per_project(tmp_path, monkeypatch):
+    """난이도 기준: 프로젝트 전용 기준이 있으면 그 프로젝트만 그것을 쓰고, 다른 프로젝트는 공통 기준. 지우면 공통으로 돌아간다."""
+    from types import SimpleNamespace
+    from exam_gen import difficulty_policy as DP
+    monkeypatch.setattr(DP, "PATH", tmp_path / "common.json")
+    a, b = SimpleNamespace(dir=tmp_path / "a"), SimpleNamespace(dir=tmp_path / "b")
+    DP.save({**DP.default_levels(), "상": "공통 상 기준"}, "확정", "담당자")
+    assert DP.load(a)["scope"] == "공통" and DP.rubric(a)["상"] == "공통 상 기준"
+    DP.save({**DP.default_levels(), "상": "A과정 상 기준"}, "임시", project=a)
+    assert DP.has_project_policy(a) and not DP.has_project_policy(b)
+    assert DP.rubric(a)["상"] == "A과정 상 기준" and DP.rubric(b)["상"] == "공통 상 기준" and DP.rubric()["상"] == "공통 상 기준"
+    assert DP.version(a).startswith("프로젝트·임시") and DP.label(b).startswith("공통 기준")
+    assert DP.use_common(a) and not DP.has_project_policy(a) and DP.rubric(a)["상"] == "공통 상 기준"
+    assert (tmp_path / "a" / "difficulty_policy.json.bak").exists()

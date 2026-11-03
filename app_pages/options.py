@@ -37,16 +37,20 @@ with st.container(border=True):
     st.markdown(":material/signal_cellular_alt: **난이도 비율 (%)** — 합계 100")
     cols = st.columns(4)
     dpct = {lv: cols[i].number_input(lv, 0, 100, int(opts["difficulty_pct"].get(lv, 0)), key=f"d_{lv}") for i, lv in enumerate(LV)}
+    d_cnt = {lv: cols[i].empty() for i, lv in enumerate(LV)}  # 문항 수는 아래에서 수량이 정해진 뒤 채운다
     dsum = sum(dpct.values())
     (st.success if dsum == 100 else st.error)(f"난이도 합계 {dsum}%")
-    with st.expander("난이도 기준(루브릭)", icon=":material/menu_book:"):
+    with st.expander(f"난이도 기준 — {difficulty_policy.label(p)}", icon=":material/menu_book:"):
+        _rub = difficulty_policy.rubric(p)
         for lv in LV:
-            st.markdown(f"- **{lv}**: {C['difficulty_rubric'][lv]}")
+            st.markdown(f"- **{lv}**: {_rub[lv]}")
+        st.caption("기준은 관리 → 난이도 기준에서 이 프로젝트 전용으로 따로 정하거나 공통 기준을 따르게 할 수 있습니다.")
 
     st.markdown(":material/category: **유형 비율 (%)** — 합계 100")
     cols = st.columns(3)
     tpct = {t: cols[i].number_input(ui.TYPE_KO[t], 0, 100, int(opts["type_pct"].get(t, 0)), key=f"t_{t}")
             for i, t in enumerate(C["type_order"])}
+    t_cnt = {t: cols[i].empty() for i, t in enumerate(C["type_order"])}
     tsum = sum(tpct.values())
     (st.success if tsum == 100 else st.error)(f"유형 합계 {tsum}%")
 
@@ -54,8 +58,11 @@ with st.container(border=True):
         c1, c2, c3 = st.columns(3)
         pos = c1.number_input("선다형 '옳은 것 고르기' %", 0, 100, int(opts["mcq_positive_pct"]),
                               help="담당자 협의: 옳지 않은 것 80% / 옳은 것 20%")
+        pos_cnt = c1.empty()
         combo = c2.number_input("선다형 중 ㄱㄴㄷㄹ 조합형 %", 0, 100, int(opts["combo_pct"]))
+        combo_cnt = c2.empty()
         retries = c3.number_input("탈락 시 재출제 횟수", 0, 5, int(opts["max_retries"]))
+        c3.caption("검증에서 탈락하면 같은 조건으로 다시 만드는 최대 횟수입니다.")
         c1, c2, c3 = st.columns(3)
         score = c1.number_input("배점", 1, 100, int(opts["score"]))
         scoring = c2.text_input("채점기준", value=opts["scoring"])
@@ -186,6 +193,21 @@ if n and not problems:
                 + (f" **중은 예상 {e['중']:.0f}문항으로 목표보다 적고 하가 많습니다** — '중'으로 낸 문항을 AI가 '하'로 많이 판정합니다. "
                    "검수 화면 '담당자 판정 난이도'로 바로잡을 수 있고, 판정 기준은 담당부서가 정합니다."
                    if g["중"] >= 1 and e["중"] < g["중"] * 0.8 else ""), icon=":material/tune:")
+    # ---- 비율 옆에 문항 수 표시(담당자 요청 2026-11-03) ----
+    explicit_n = mode == "추가 출제" and how == "난이도별 수량"
+    goal_d = {lv: round(calib_info["goal"][lv]) for lv in LV} if calib_info else (
+        sm["difficulty"] if not explicit_n else diff_counts)
+    for lv in LV:
+        if explicit_n:
+            d_cnt[lv].caption(f"→ {goal_d.get(lv, 0)}문항 (아래 난이도별 수량 기준)")
+        else:
+            d_cnt[lv].caption(f"→ {goal_d.get(lv, 0)}문항" + (" (판정 기준 목표)" if calib_info else ""))
+    for t in C["type_order"]:
+        t_cnt[t].caption(f"→ {sm['type'].get(t, 0)}문항")
+    _mcq = sm["type"].get("mcq", 0)
+    pos_cnt.caption(f"→ 선다형 {_mcq}문항 중 옳은 것 {pol.get('positive', 0)} · 옳지 않은 것 {pol.get('negative', 0)}"
+                    + " (조합형 포함)")
+    combo_cnt.caption(f"→ 선다형 {_mcq}문항 중 조합형 {sm['combo']}문항")
     est = estimate(llm_settings.load(), sm["total"])
     if calib_info:  # 보정으로 늘어난 상·최상 슬롯은 더 오래 걸린다
         base = largest_remainder(n, dpct)
@@ -207,14 +229,15 @@ st.subheader(":material/checklist: 출제 전 점검")
 with st.container(border=True):
     chasi_n = len({x["chasi"] for x in elig})
     rows = [(p.page_map_ready(), "원고 쪽수 확정", "확정됨" if p.page_map_ready() else "원고 등록 화면에서 확정하세요"),
-            (chasi_n > 1 or len(elig) <= 15 or None, "차시 나누기",
-             f"{chasi_n}개 차시" + ("" if chasi_n > 1 or len(elig) <= 15 else " — 원고가 여러 차시라면 원고 등록 ③에서 나눠 주세요")),
+            (chasi_n > 1 or len(elig) <= 15 or None, "차시(단원) 나누기",
+             f"{chasi_n}개 차시" + ("" if chasi_n > 1 or len(elig) <= 15 else
+                                  " — 원고가 여러 단원이면 원고 등록 ③에서 단원별로 나누면 단원마다 고르게 출제됩니다(한 단원이면 그대로 두어도 됩니다)")),
             (bool(meta.get("objectives")) or None, "학습목표",
              "입력됨" if meta.get("objectives") else "없음(권장) — 원고 등록 ④에서 넣으면 중요한 내용 위주로 출제합니다")]
-    _pol = difficulty_policy.load()
+    _pol = difficulty_policy.load(p)
     rows.append((_pol["status"] == "확정" or None, "난이도 기준",
-                 f"담당자 확정 기준({_pol.get('confirmed_by') or ''})" if _pol["status"] == "확정" else
-                 "임시 기준안(담당자 확인 전) — 관리 → 난이도 기준에서 확인·확정할 수 있습니다"))
+                 difficulty_policy.label(p) + (f"({_pol.get('confirmed_by')})" if _pol["status"] == "확정" and _pol.get("confirmed_by") else "")
+                 + ("" if _pol["status"] == "확정" else " — 관리 → 난이도 기준에서 확인·확정할 수 있습니다")))
     P = llm_settings.PROVIDERS
 
     def _ai(role):

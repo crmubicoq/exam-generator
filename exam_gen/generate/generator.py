@@ -291,7 +291,7 @@ class Pipeline:
                           if any(s["difficulty"] in HARD for s in chunk) else [],
                           avoid=avoid, feedback=fb,
                           revise=[{"sid": s["sid"], **s["revise"]} for s in chunk if s.get("revise")])
-            system = render("generate_system.j2", rubric=difficulty_policy.rubric())  # 담당자 난이도 기준(없으면 기준안)
+            system = render("generate_system.j2", rubric=difficulty_policy.rubric(self.p))  # 이 프로젝트 난이도 기준(없으면 공통 기준)
             res = self.client.structured(system, user, schema.gen_schema(len(chunk)),
                                          model=self.s.model_generate, task="generate",
                                          context={"project": self.p, "page": g, "slots": chunk,
@@ -328,7 +328,7 @@ class Pipeline:
                     "solver": self.s.model_solve or self.client.actual_model("solve"),
                     "reviewer_provider": self.s.provider_for("review"),
                     "reviewer": self.s.model_review or self.client.actual_model("review"),
-                    "prompt_version": PROMPT_VERSION, "difficulty_policy": difficulty_policy.version(),
+                    "prompt_version": PROMPT_VERSION, "difficulty_policy": difficulty_policy.version(self.p),
                     "manuscript": self.p.manuscript_hash(), "at": now()},
         }
         if s["type"] != "mcq":

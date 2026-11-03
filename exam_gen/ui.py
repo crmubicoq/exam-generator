@@ -158,15 +158,18 @@ def render_sidebar():
                        + (f"  \n구분: **{_m['memo']}**" if _m.get("memo") else "")
                        + f"  \n만든 날: {(_m.get('created') or '')[:10]}")
         with st.expander("새 프로젝트", expanded=not projects, icon=":material/add:"):
-            name = st.text_input("과정명 (필수)", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3")
-            memo = st.text_input("구분 메모", placeholder="예: 2026 상반기 · 300문항 본출제")
+            nk = st.session_state.get("_new_proj_n", 0)  # 만든 뒤 입력칸을 비우려고 키를 바꾼다
+            name = st.text_input("과정명 (필수)", placeholder="예: MZ에서 시니어까지 세대공감 금융솔루션 3", key=f"np_name_{nk}")
+            memo = st.text_input("구분 메모", placeholder="예: 2026 상반기 · 300문항 본출제", key=f"np_memo_{nk}")
             st.caption("화면에는 '과정명 · 구분 메모'로 보입니다. 같은 과정을 여러 번 출제할 때 메모로 구분하세요.")
             if st.button("만들기", disabled=not name.strip()):
                 try:
                     p = Project.create(name, memo)
                     st.session_state["project"] = p.slug
-                    set_last_project(p.slug)
-                    st.rerun()
+                    st.session_state["_new_proj_n"] = nk + 1
+                    # by="page": 다음 실행에서 사이드바 목록 선택이 새 프로젝트로 바뀐다(위 project_select 처리)
+                    set_last_project(p.slug, by="page")
+                    st.switch_page("app_pages/register.py")  # 새 프로젝트의 첫 단계로 바로 이동
                 except (FileExistsError, ValueError) as e:
                     st.error(str(e))
         _step_menu()

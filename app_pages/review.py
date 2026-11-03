@@ -287,7 +287,7 @@ with right:
     # --- 문항 읽기 (시험지 형태) ---
     with tab_q, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
         with st.container(border=True):
-            st.markdown(f"<div style='font-size:1.15em;font-weight:600;line-height:1.6'>"
+            st.markdown(f"<div style='font-size:1.15em;font-weight:600;line-height:1.6;white-space:pre-wrap'>"
                         f"{html.escape(saved.get('stem', ''))}</div>", unsafe_allow_html=True)
             lines = [f"**{s['label']}.** {s['text']}" for s in saved.get("statements") or []]
             if saved["type"] == "mcq":

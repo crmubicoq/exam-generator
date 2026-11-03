@@ -19,8 +19,8 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
         user = ("# 학습목표\n" + (objectives or "(제공되지 않음)") + "\n\n# 원고 발췌\n" + excerpt(project, sub_items)
                 + "\n\n# 문항 (정답·해설·근거 포함)\n"
                 + "\n\n".join(present(it, i, with_key=True) for it, i in zip(sub_items, sub_ids)))
-        return client.structured(render("review_system.j2", rubric=difficulty_policy.rubric(),
-                                        policy_status=_policy_status()), user, REVIEW_SCHEMA, model=settings.model_review,
+        return client.structured(render("review_system.j2", rubric=difficulty_policy.rubric(project),
+                                        policy_status=_policy_status(project)), user, REVIEW_SCHEMA, model=settings.model_review,
                                  task="review", context={"items": sub_items, "ids": sub_ids})
 
     res = ask_until_complete(call, items, ids)
@@ -90,8 +90,8 @@ def _trap_fails(item: dict, traps) -> list[str]:
     return out
 
 
-def _policy_status() -> str:
-    p = difficulty_policy.load()
+def _policy_status(project=None) -> str:
+    p = difficulty_policy.load(project)
     return "담당자 확정 기준" if p["status"] == "확정" else "임시 기준안 — 담당자 확인 전"
 
 

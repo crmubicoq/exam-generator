@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>평가문항 출제 도구 시연</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 시험지 한 장처럼 가운데 한 단(본문 폭 약 46em), 절마다 왼쪽 여백에 절 번호. 정답 근거 노랑·함정 파랑은 도구 화면의 하이라이트 색을 그대로 쓴다 */
+:root{
+  --paper:#f7f8fa; --sheet:#ffffff; --ink:#1d2433; --muted:#5b6476; --rule:#d9dee7;
+  --accent:#1f4e8c;          /* 출제 잉크 */
+  --mark:#c0392b;            /* 채점 펜 */
+  --hl-answer:#fff1a8;       /* 정답 근거 노랑 */
+  --hl-trap:#cfe3ff;         /* 함정 원문 파랑 */
+  --ok:#1e7a4c; --warn:#a86400;
+  --f-display:"Noto Serif KR","Batang",serif;
+  --f-body:"IBM Plex Sans KR","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+  --f-data:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#12161d; --sheet:#1a1f29; --ink:#e6e9ef; --muted:#a3abba; --rule:#2e3544;
+  --accent:#8db4ec; --mark:#f08a7e; --hl-answer:#5c5016; --hl-trap:#1f3a5e; --ok:#6fcf9b; --warn:#e6b45c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#12161d; --sheet:#1a1f29; --ink:#e6e9ef; --muted:#a3abba; --rule:#2e3544;
+  --accent:#8db4ec; --mark:#f08a7e; --hl-answer:#5c5016; --hl-trap:#1f3a5e; --ok:#6fcf9b; --warn:#e6b45c; color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font:16px/1.7 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:52rem;margin:0 auto;padding-block:40px 64px;display:grid;gap:44px}
+header{display:grid;gap:10px;border-bottom:2px solid var(--ink);padding-bottom:22px}
+.eyebrow{font:500 13px/1.4 var(--f-body);letter-spacing:.06em;color:var(--muted)}
+h1{font:700 clamp(28px,5vw,40px)/1.25 var(--f-display);margin:0;text-wrap:balance}
+h2{font:700 22px/1.35 var(--f-display);margin:0;text-wrap:balance}
+h3{font:600 16px/1.4 var(--f-body);margin:0}
+p{margin:0}
+.lead{color:var(--muted);max-width:42em}
+section{display:grid;grid-template-columns:3.2rem minmax(0,1fr);gap:0 14px}
+section>.no{font:500 14px/1.9 var(--f-data);color:var(--mark)}
+section>.body{display:grid;gap:16px;min-width:0}
+@media (max-width:560px){section{grid-template-columns:minmax(0,1fr)}section>.no{line-height:1}}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:15px}
+.flow span{background:var(--sheet);border:1px solid var(--rule);border-radius:6px;padding:4px 10px}
+.flow i{font-style:normal;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:10px}
+.tile{background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;display:grid;gap:2px}
+.tile b{font:600 24px/1.2 var(--f-data);font-variant-numeric:tabular-nums}
+.tile small{color:var(--muted);font-size:13px;line-height:1.45}
+.tbl{overflow-x:auto;background:var(--sheet);border:1px solid var(--rule);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:30rem}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font-weight:600;color:var(--muted);font-size:13px;letter-spacing:.02em}
+td.n{font-family:var(--f-data);font-variant-numeric:tabular-nums;white-space:nowrap}
+.g{font:600 13px/1 var(--f-data);padding:3px 7px;border-radius:4px;border:1px solid currentColor;white-space:nowrap}
+.gA{color:var(--ok)}.gB{color:var(--accent)}.gC{color:var(--warn)}
+ol.script{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:12px}
+ol.script li{counter-increment:s;display:grid;grid-template-columns:2.2rem minmax(0,1fr);gap:4px 10px}
+ol.script li::before{content:counter(s);font:600 15px/1.6 var(--f-data);color:var(--accent);grid-column:1;grid-row:1 / span 2}
+ol.script li>*{grid-column:2;min-width:0}
+ol.script h3{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;line-height:1.6}
+ol.script .t{color:var(--muted);font:500 12.5px/1.4 var(--f-data);border:1px solid var(--rule);border-radius:4px;padding:1px 6px;white-space:nowrap}
+.note{background:var(--sheet);border-left:3px solid var(--mark);padding:12px 16px;border-radius:0 8px 8px 0}
+mark.a{background:var(--hl-answer);color:inherit;padding:0 3px}
+mark.t{background:var(--hl-trap);color:inherit;padding:0 3px}
+ul{margin:0;padding-left:1.2em;display:grid;gap:6px}
+.ask{display:grid;gap:12px}
+.ask>div{background:var(--sheet);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;display:grid;gap:6px}
+.ask .q{font-weight:600}
+.ask .opt{color:var(--muted);font-size:14.5px}
+footer{color:var(--muted);font-size:13px;border-top:1px solid var(--rule);padding-top:14px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">담당부서 시연 자료 · 2026년 11월 3일</div>
+  <h1>평가문항 자동 출제 도구</h1>
+  <p class="lead">원고를 올리면 지침에 맞춰 문항을 출제하고, 문항마다 원고 어디에 근거가 있는지 표시합니다. AI가 만든 문항은 여러 단계로 자동 검증한 뒤 담당자가 검수하고, 제출 양식 엑셀과 근거 PDF로 내보냅니다. 다음 주부터 실제 업무에 쓰시는 것을 기준으로 정리했습니다.</p>
+</header>
+
+<section>
+  <div class="no">01</div>
+  <div class="body">
+    <h2>작업 흐름</h2>
+    <div class="flow"><span>① 원고 등록</span><i>→</i><span>② 기출문제 등록(선택)</span><i>→</i><span>③ 출제 옵션</span><i>→</i><span>④ 출제 진행</span><i>→</i><span>⑤ 검수</span><i>→</i><span>⑥ 출력</span></div>
+    <p>왼쪽 사이드바에 진행 순서가 있고, 끝낸 단계에는 ✓, 다음에 할 단계에는 '지금 할 일'이 붙습니다. 원고는 PDF·PPT·워드·한글을 받습니다. 출력물은 <b>제출 양식 엑셀</b>(최종·검수용·검증리포트 시트)과 <b>근거 PDF</b>(원고 위에 <mark class="a">정답 근거</mark>와 <mark class="t">함정 원문</mark>을 색으로 표시)입니다.</p>
+  </div>
+</section>
+
+<section>
+  <div class="no">02</div>
+  <div class="body">
+    <h2>100문항 시험 출제 결과</h2>
+    <p>실제 원고(286쪽, 출제 대상 243쪽)로 100문항(+여유 5문항)을 출제했습니다. 오늘 시연에 쓰는 프로젝트입니다.</p>
+    <div class="tiles">
+      <div class="tile"><b>71분</b><small>105문항 출제·검증 전체</small></div>
+      <div class="tile"><b>100 / 105</b><small>자동 검증 통과(5문항은 수동확인)</small></div>
+      <div class="tile"><b>438 / 438</b><small>근거 인용이 원고와 글자 단위로 일치</small></div>
+      <div class="tile"><b>100쪽</b><small>문항이 들어간 서로 다른 페이지(한 쪽에 몰리지 않음)</small></div>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>지침 항목</th><th>목표</th><th>결과</th></tr></thead>
+      <tbody>
+        <tr><td>유형 비율(선다·진위·단답)</td><td class="n">50 · 30 · 20</td><td class="n">49 · 31 · 20</td></tr>
+        <tr><td>선다형 정답 위치 ①②③④</td><td>고르게</td><td class="n">12 · 13 · 12 · 12</td></tr>
+        <tr><td>진위형 O : X</td><td class="n">5 : 5</td><td class="n">16 : 15</td></tr>
+        <tr><td>선다형 옳지 않은 것 : 옳은 것</td><td class="n">8 : 2</td><td class="n">39 : 10</td></tr>
+        <tr><td>같은 원리를 반복한 문항</td><td>검수에서 확인</td><td class="n">13묶음 · 41문항 표시</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section>
+  <div class="no">03</div>
+  <div class="body">
+    <h2>문항 한 개가 거치는 검증</h2>
+    <p>문항 오류는 서비스 사고로 이어지므로, 통과하지 못한 문항은 자동으로 다시 출제하고(최대 3번) 그래도 안 되면 '수동확인'으로 남깁니다.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>단계</th><th>확인하는 것</th><th>이번 시험에서 걸러진 수</th></tr></thead>
+      <tbody>
+        <tr><td>G1 형식</td><td>보기 수, 정답 표기, 필수 항목</td><td class="n">0</td></tr>
+        <tr><td>G2 근거 대조</td><td>근거 문장이 원고에 실제로 있는지(글자 단위 대조)</td><td class="n">4</td></tr>
+        <tr><td>G3 규칙</td><td>지침 형식, 정답 단서 표현, 지시어, '원고'·쪽수 노출</td><td class="n">23</td></tr>
+        <tr><td>G4 독립 풀이</td><td>다른 AI가 정답을 모른 채 풀어서 같은 답이 나오는지</td><td class="n">0</td></tr>
+        <tr><td>G5 검수</td><td>함정이 정말 틀렸는지, 이의 제기 여지, 정답 단서, 난이도</td><td class="n">77</td></tr>
+        <tr><td>G6 중복</td><td>이미 낸 문항·기출문제와 겹치는지</td><td class="n">0</td></tr>
+        <tr><td>G7 사람 검수</td><td>담당자 승인·수정·삭제, 담당자 판정 난이도</td><td>시연에서 진행</td></tr>
+      </tbody>
+    </table></div>
+    <p>걸러진 수는 재출제 전 첫 시도 기준입니다. 재출제를 거쳐 100문항이 통과했고, 수동확인 5문항은 모두 실제 결함이었습니다(지시어가 가리키는 대상 없음, 단답 정답이 일반 표현, 난이도 미달 등).</p>
+  </div>
+</section>
+
+<section>
+  <div class="no">04</div>
+  <div class="body">
+    <h2>시연 순서</h2>
+    <p>노트북에서 실제 원고를 넣고 처음부터 출제합니다. 출제는 문항당 약 0.7분이 걸리므로(100문항 실측) 시연에서는 10문항(약 7분)만 냅니다.</p>
+    <ol class="script">
+      <li><h3>준비<span class="t">시연 전</span></h3><p>노트북에 휴대용 패키지(<code>출제도구_휴대용_20261103.zip</code>)를 <code>C:\출제도구</code>처럼 짧은 경로에 풉니다. 그다음 <code>Claude_로그인.bat</code>(처음 한 번, Claude 계정 로그인) → <code>run.bat</code>(대시보드 실행, 브라우저가 열림) 순서로 실행합니다. <code>setup.bat</code>은 Python을 따로 설치한 개발용이라 실행하지 않습니다. 시연할 원고 파일을 노트북에 넣어 두고, 1~2문항으로 미리 한 번 출제해 로그인·인터넷 연결을 확인합니다. <code>run.bat</code> 검은 창은 닫지 마세요(닫으면 프로그램이 꺼집니다).</p></li>
+      <li><h3>새 프로젝트 만들기<span class="t">약 3분</span></h3><p>사이드바에서 과정명과 구분 메모(예: 시연 · 10문항)를 넣어 프로젝트를 만듭니다. 진행 순서 1~6과 '지금 할 일' 표시를 함께 봅니다.</p></li>
+      <li><h3>원고 등록<span class="t">약 5분</span></h3><p>원고를 올리고 쪽수 확정, 차시 나누기(범위로 한꺼번에 지정), 출제 제외 페이지(목차·부록 등)를 정합니다. 원고가 바뀌면 '새 버전으로 교체'로 쪽 이동을 자동 반영한다는 점도 설명합니다.</p></li>
+      <li><h3>출제 옵션 → 출제 시작<span class="t">약 3분</span></h3><p>총 수량을 10으로 하고 난이도·유형 비율, 난이도 보정 출제, 출제 전 점검표와 예상 시간을 확인한 뒤 [출제 시작]을 누릅니다. 300문항이면 예상 시간이 어떻게 나오는지도 숫자만 바꿔 보여 줍니다.</p></li>
+      <li><h3>출제 진행 지켜보기<span class="t">약 7분</span></h3><p>진행률, 검증 단계(G1~G6)별 통과·탈락, 자동 재출제, AI 호출 수가 올라가는 것을 봅니다. 기다리는 동안 관리 → 난이도 기준 화면(임시 기준안)을 보여 주며 06의 결정 사항을 설명합니다.</p></li>
+      <li><h3>검수<span class="t">약 7분</span></h3><p>방금 만든 10문항으로 진행합니다. 대기열(수동확인·경고), 문항 옆 원고 근거 쪽(<mark class="a">정답 근거</mark>·<mark class="t">함정 원문</mark>), 승인·수정·삭제, <b>담당자 판정 난이도</b>를 보여 줍니다. 한 문항을 고쳐 AI 재검증까지 받아 봅니다.</p></li>
+      <li><h3>품질 리포트 · 출력<span class="t">약 5분</span></h3><p>항목별 등급과 고칠 방법을 본 뒤 제출 양식 엑셀과 근거 PDF를 내려받아 직접 엽니다. 시험지 PDF와 출력 이력(이의신청 조회로 이어짐)도 봅니다.</p></li>
+      <li><h3>100문항 규모 결과<span class="t">선택</span></h3><p>원리 반복 묶음이나 최종 자동 선정처럼 문항이 많아야 보이는 기능은 02의 100문항 결과로 설명합니다. 화면으로 보여 주려면 개발 PC의 100문항 프로젝트를 <code>데이터_내보내기.bat</code> → <code>데이터_가져오기.bat</code>로 미리 옮겨 둡니다.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="no">05</div>
+  <div class="body">
+    <h2>알고 쓰셔야 할 한계</h2>
+    <ul>
+      <li><b>난이도가 목표 비율대로 나오지 않습니다.</b> AI 검수는 출제 의도보다 낮게 판정합니다. 이번 시험에서 목표 최상 5·상 15·중 60·하 20%에 대해 실제 판정은 최상 0·상 30·중 38·하 32문항이었습니다. '난이도 보정 출제'로 상은 목표 가까이 맞추지만, 최상과 중·하 경계는 판정 기준을 정해야 해결됩니다(아래 06).</li>
+      <li><b>경고 문항은 사람이 봐야 합니다.</b> 통과 100문항 중 87문항에 검수 참고 경고가 있습니다. 대부분 같은 원리 반복 표시(41), 보기 다듬기·시의성 참고입니다. 정답 관련 지적 4문항과 이의 제기 여지 10문항은 검수에서 꼭 확인해 주세요.</li>
+      <li><b>출제에 시간이 걸립니다.</b> 300문항(+여유 15%)은 약 3시간 15분, AI 호출 약 1,700회로 예상합니다. Claude 구독 사용 한도에 걸리면 기다렸다가 이어서 출제합니다.</li>
+      <li><b>사실 확인은 원고 기준입니다.</b> 원고와 현재 사실(기관명·법령)이 다를 수 있는 문항에는 '시의성 확인' 표시만 하고 고치지는 않습니다.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="no">06</div>
+  <div class="body">
+    <h2>정해 주셔야 할 것</h2>
+    <div class="ask">
+      <div>
+        <p class="q">1. 난이도 기준</p>
+        <p>받은 기준 문서에는 비율만 있고 하·중·상·최상의 정의가 없습니다. 지금은 교육 평가에서 널리 쓰는 인지 수준으로 만든 <b>임시 기준안</b>(하=기억, 중=이해, 상=적용, 최상=분석·종합/자격시험형 사례)을 쓰고 있습니다.</p>
+        <p class="opt">방법 ① 부서 지침이 있으면 '관리 → 난이도 기준'에 넣고 확정 · ② 임시 기준안을 보고 고칠 곳만 고친 뒤 확정 · ③ 문항 10~15개를 검수 화면에서 직접 '담당자 판정 난이도'로 매겨 주시면 그 판정이 기준이 됩니다. 아무것도 정하지 않으면 임시 기준안으로 운영하고, 엑셀 검증리포트에 '임시 기준안'으로 표시됩니다.</p>
+      </div>
+      <div>
+        <p class="q">2. 최상 문항의 기준</p>
+        <p>'자격시험형 실무 사례 문항'이면 최상으로 볼지, 판단이 두 단계 이상 이어져야 최상인지 정해 주세요. 지금 AI 검수는 사례형 최상 문항의 약 90%를 '상'으로 판정합니다.</p>
+      </div>
+      <div>
+        <p class="q">3. AI 사용 방식</p>
+        <p>앞으로 1~2개월은 Claude 구독으로 출제합니다(별도 청구 없음, 사용 한도 있음). 운영 단계에서 회사 API 키(문항당 약 0.3달러, 300문항 약 100달러 안팎)나 사내 LiteLLM으로 바꿀지, 원고를 어느 외부 AI 서비스까지 보내도 되는지 확인이 필요합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="no">07</div>
+  <div class="body">
+    <h2>다음 주 실사용</h2>
+    <ul>
+      <li><b>설치</b>: Python 설치 없이 압축만 풀어 쓰는 휴대용 패키지로 드립니다. 짧은 경로(예: <code>C:\출제도구</code>)에 풀고 <code>Claude_로그인.bat</code>(처음 한 번) → <code>run.bat</code> 순서로 실행합니다. <code>setup.bat</code>은 실행하지 않습니다. 다음부터는 <code>run.bat</code>만 실행하면 됩니다.</li>
+      <li><b>처음 출제</b>: 30문항 정도로 먼저 흐름을 익히신 뒤 본출제(300문항)를 권합니다. 본출제는 퇴근 전이나 점심시간처럼 PC를 오래 켜 둘 수 있을 때 시작하세요. 끝나면 윈도우 알림으로 알려 드립니다(PC 알림 설정에 따라 보이지 않을 수 있으니 출제 진행 화면도 확인해 주세요).</li>
+      <li><b>데이터</b>: 출제 결과는 PC 안에만 저장되고 자동 백업됩니다. 다른 PC로 옮길 때는 <code>데이터_내보내기.bat</code>를 씁니다. 두 PC에서 같은 프로젝트를 동시에 고치지 마세요.</li>
+      <li><b>피드백</b>: 화면에서 헷갈리는 용어, 문항 품질 문제(문항키와 함께)를 모아 주시면 반영하겠습니다.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>수치는 2026년 10월 30일 100문항 시험 출제(Claude Opus 5.5, 실제 원고) 실측입니다. 원고 내용은 이 자료에 넣지 않았습니다.</footer>
+</div>
+</body>
+</html>

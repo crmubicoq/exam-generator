@@ -51,6 +51,11 @@ def _e(s) -> str:
     return html.escape(str(s or "").translate(_GLYPH_FIX))
 
 
+def _ml(s) -> str:
+    """여러 줄 텍스트(사례 블록이 있는 발문 등) — 줄바꿈을 그대로 살린다."""
+    return _e(s).replace(chr(10), "<br>")
+
+
 def _cover(doc, title: str, items: list[dict], project, mode: str):
     pages = sorted({g for it in items for g in it.get("source_pages") or []})
     labels = format_pages([project.pages[g]["label"] for g in pages])
@@ -123,7 +128,7 @@ def _separator(doc, it: dict, project):
     _html_page(doc, f"""<h1>{_e(it['qlabel'])} · 문항 {_e(it['no'])}</h1>
       <p class="muted">{_e(it.get('chasi'))}차시 · {_e(type_name(it['type']))} · 난이도 {_e(it.get('difficulty'))} · 문항키 {_e(it['key'])}</p>
       {warn}<h2>출처</h2><p>원고 p.{_e(pages) or '확인 안 됨'}</p>
-      <h2>발문</h2><div class="box">{_e(it['stem'])}{st}</div>
+      <h2>발문</h2><div class="box">{_ml(it['stem'])}{st}</div>
       {'<h2>보기</h2><div class="box">' + ch + '</div>' if ch else ''}
       <h2>정답</h2><p class="ans">{_e(ans)}</p>
       <h2>해설</h2><p>{_e(it.get('explanation'))}</p>

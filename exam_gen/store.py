@@ -46,6 +46,21 @@ def slugify(name: str) -> str:
 _UI_STATE = DATA_DIR / "ui_state.json"
 
 
+def exclusion_reason(page: dict, min_chars: int | None = None) -> str:
+    """출제 제외 이유. 예전에 만든 프로젝트(이유 기록 없음)는 글자 수·목차 여부로 짐작하고, 그 밖은 '직접 제외'로 본다."""
+    if not page.get("excluded"):
+        return ""
+    if page.get("excl_reason"):
+        return page["excl_reason"]
+    limit = min_chars if min_chars is not None else criteria()["thresholds"]["min_page_chars"]
+    if page.get("chars", 0) < limit:
+        return f"자동: 글자가 적음({page.get('chars', 0)}자, 기준 {limit}자 미만)"
+    head = chr(10).join(l["text"] for l in page.get("lines", [])[:6] if not l.get("margin"))
+    if re.search(r"^\s*(목\s*차|차\s*례|contents)\s*$", head, re.I | re.M):
+        return "자동: 목차 페이지"
+    return "직접 제외"
+
+
 def last_project() -> dict:
     """마지막으로 작업한 프로젝트 {"project", "by": "ui"|"cli"} — 대시보드 새로고침·재시작 뒤에도 같은 프로젝트를 연다."""
     try:
@@ -322,13 +337,17 @@ class Project:
                 chars = len(re.sub(r"\s", "", text))
                 prev = old.get((s["id"], idx))
                 limit = 20 if s.get("kind") in ("ppt", "pptx") else min_chars  # 슬라이드는 글자가 적다
-                auto_excl = chars < limit or bool(re.search(r"^\s*(목\s*차|차\s*례|contents)\s*$", text[:200], re.I | re.M))
+                is_toc = bool(re.search(r"^\s*(목\s*차|차\s*례|contents)\s*$", text[:200], re.I | re.M))
+                auto_excl = chars < limit or is_toc
+                auto_reason = (f"자동: 글자가 적음({chars}자, 기준 {limit}자 미만)" if chars < limit
+                               else "자동: 목차 페이지" if is_toc else "")
                 pages.append({
                     "g": len(pages), "src": s["id"], "idx": idx,
                     "label": self.label_for(s, idx),
                     # 새 판에 새로 생긴 쪽은 바로 앞 쪽의 차시를 따른다
                     "chasi": prev["chasi"] if prev else last_chasi,
                     "excluded": prev["excluded"] if prev else auto_excl,
+                    "excl_reason": prev.get("excl_reason", "") if prev else auto_reason,
                     "chars": chars, "lines": lines,
                     "alt_text": alt[idx] if idx < len(alt) else None,
                     "size": [round(page.rect.width, 1), round(page.rect.height, 1)],

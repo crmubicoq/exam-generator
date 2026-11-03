@@ -7,14 +7,14 @@ import pymupdf
 
 from ..config import type_name
 from . import export_log, numbering
-from .evidence_pdf import A4, _archive, _css, _e
+from .evidence_pdf import A4, _archive, _css, _e, _ml
 
 _EXTRA_CSS = (".q{margin:0 0 12pt 0} .no{font-weight:bold} .ch{margin-left:14pt} .ans{color:#b00;margin-left:14pt}"
               " .exp{color:#444;margin-left:14pt;font-size:9pt} .hd{border-bottom:1px solid #999;margin-bottom:8pt}")
 
 
 def _item_html(it: dict, with_answer: bool) -> str:
-    out = [f"<div class='q'><div><span class='no'>{_e(it['no'])}.</span> {_e(it['stem'])}</div>"]
+    out = [f"<div class='q'><div><span class='no'>{_e(it['no'])}.</span> {_ml(it['stem'])}</div>"]
     for s in it.get("statements") or []:
         out.append(f"<div class='ch'>{_e(s['label'])}. {_e(s['text'])}</div>")
     if it["type"] == "mcq":

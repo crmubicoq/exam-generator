@@ -3,7 +3,8 @@
   python -m exam_gen.tools.transfer export [저장 폴더]     # 기본: 바탕화면
   python -m exam_gen.tools.transfer import [ZIP 경로]      # 기본: 바탕화면·프로그램 폴더에서 가장 최근 ZIP
 
-포함: 원고/, projects/, data/ui_state.json(마지막 작업 프로젝트), data/settings.json(공급자 선택 — 비밀값 없음)
+포함: 원고/, projects/, data/ui_state.json(마지막 작업 프로젝트), data/settings.json(공급자 선택 — 비밀값 없음),
+      data/difficulty_policy.json(공통 난이도 기준; 프로젝트 전용 기준은 projects/ 안에 있음)
 제외: API 키(Windows 자격 증명 저장소에 있음), Claude·Codex 로그인 — 새 PC에서 다시 로그인한다.
 """
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PREFIX = "출제도구_이전데이터_"
 INCLUDE_DIRS = ["원고", "projects"]
-INCLUDE_FILES = ["data/ui_state.json", "data/settings.json"]
+INCLUDE_FILES = ["data/ui_state.json", "data/settings.json", "data/difficulty_policy.json"]
 
 
 def _desktop() -> Path:

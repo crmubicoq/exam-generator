@@ -80,7 +80,7 @@ st.markdown(f"### :material/description: {names[slug]} · {key} &nbsp;{ui.status
 left, right = st.columns([1, 1])
 with left:
     with st.container(border=True):
-        st.markdown(f"**[{ui.TYPE_KO.get(it['type'], it['type'])} · {it.get('difficulty')}]** {it.get('stem')}")
+        st.markdown(f"**[{ui.TYPE_KO.get(it['type'], it['type'])} · {it.get('difficulty')}]** {(it.get('stem') or '').replace(chr(10), '  ' + chr(10))}")
         for s in it.get("statements") or []:
             st.markdown(f"{s['label']}. {s['text']}")
         for i, c in enumerate(it.get("choices") or [], 1):
@@ -98,7 +98,7 @@ with left:
                    f"{diff[0]['no']}번으로 나간 당시 내용입니다.", icon=":material/history:")
         snap = diff[0].get("snap") or {}
         with st.container(border=True):
-            st.markdown(snap.get("stem", ""))
+            st.markdown(snap.get("stem", "").replace(chr(10), '  ' + chr(10)))
             for s in snap.get("statements") or []:
                 st.markdown(f"{s['label']}. {s['text']}")
             for i, c in enumerate(snap.get("choices") or [], 1):

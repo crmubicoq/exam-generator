@@ -9,7 +9,10 @@ import streamlit as st
 
 from exam_gen import manuscript_update as MU
 from exam_gen import ui
+from exam_gen.config import criteria
+from exam_gen.ingest import chasi_detect
 from exam_gen.ingest.convert import SUPPORTED, ConvertError
+from exam_gen.store import exclusion_reason
 from exam_gen.llm import settings as llm_settings
 
 p = ui.require_project(ui.current_project())
@@ -50,7 +53,10 @@ with st.container(border=True):
                     tmp.write_bytes(up.getvalue())
                     try:
                         s = p.add_source(tmp, up.name)
-                        msgs.append(("ok", f"{up.name}: {s['pages']}페이지를 등록했습니다. 아래 ②에서 쪽수를 확인하세요."))
+                        d = chasi_detect.apply_new_source(p, s["id"])  # 장·절 제목으로 차시를 미리 나눈다
+                        msgs.append(("ok", f"{up.name}: {s['pages']}페이지를 등록했습니다. 아래 ②에서 쪽수를 확인하세요."
+                                     + (f" 본문의 '{d['unit']}' 제목 {len(d['heads'])}개를 찾아 차시를 {len(d['heads'])}개로 "
+                                        "미리 나눴습니다. ③에서 맞는지 확인하세요." if d else "")))
                     except ConvertError as e:
                         msgs.append(("err", f"{up.name}: {e}"))
         ss["reg_msgs"] = msgs
@@ -110,44 +116,101 @@ for s in meta["sources"]:
 pages = p.pages
 _chasi = {x["chasi"] for x in pages if not x["excluded"]}
 step(3, "차시 나누기·출제 제외 페이지", len(_chasi) > 1 or len(pages) <= 15, "view_list")
-st.caption("**차시마다 문항 수를 분량에 맞춰 먼저 나누므로, 차시를 바르게 지정해야 원고 전체에 고르게 출제됩니다.** "
-           "아래 **범위로 한꺼번에 지정**에서 쪽 범위마다 차시를 정하고, 표지·목차·부록처럼 출제하지 않을 페이지를 "
-           "제외하세요(누르면 바로 저장). 한두 쪽만 고칠 때는 표에서 직접 바꾼 뒤 **페이지 설정 저장**을 누르세요. "
-           "글자가 적은 페이지는 자동으로 제외됩니다.")
+st.markdown("- **차시**: 교육 과정의 회차·단원입니다(예: 1차시 = 1장). 차시마다 문항 수를 분량에 맞춰 먼저 나누므로, "
+            "차시를 나눠 두면 단원마다 고르게 출제됩니다. 원고가 한 단원이면 모두 1차시로 두어도 됩니다.\n"
+            "- **출제 제외**: 표지·목차·부록·참고문헌처럼 문항을 내지 않을 페이지입니다. 글자가 적은 페이지는 자동으로 제외됩니다.\n"
+            "- **원고 쪽수**: 원고에 인쇄된 쪽 번호(②에서 확정한 값)입니다. 엑셀·근거PDF에 이 번호가 쓰입니다. "
+            "**순번**은 파일을 첫 장부터 1, 2, 3…으로 센 번호로, 표지처럼 쪽 번호가 없는 장도 셉니다.")
 if len(_chasi) <= 1 and len(pages) > 15:
-    st.warning(f"지금은 {len(pages)}쪽 전체가 **1차시**입니다. 원고가 여러 차시라면 나눠 주세요.", icon=":material/warning:")
+    st.info(f"지금은 {len(pages)}쪽 전체가 **1차시**입니다. 원고가 여러 단원이면 아래에서 단원별로 차시를 나눠 주세요.",
+            icon=":material/info:")
 srcname = {s["id"]: s["filename"] for s in meta["sources"]}
+_kind = {s["id"]: s.get("kind") for s in meta["sources"]}
+
+
+def _why(x):
+    return exclusion_reason(x, 20 if _kind.get(x["src"]) in ("ppt", "pptx") else None)
+
+
 df = pd.DataFrame([{"g": x["g"], "순번": x["g"] + 1, "파일": srcname.get(x["src"], x["src"]), "원고 쪽수": x["label"],
-                    "차시": x["chasi"], "제외": x["excluded"], "글자 수": x["chars"],
+                    "차시": x["chasi"], "제외": x["excluded"], "제외 이유": _why(x), "글자 수": x["chars"],
                     "미리보기": p.page_text(x["g"])[:60].replace("\n", " ")} for x in pages])
 with st.container(border=True):
-    st.markdown("**:material/format_list_numbered_rtl: 범위로 한꺼번에 지정 (차시·출제 제외)**")
-    st.caption("표의 **순번**으로 범위를 정합니다(여러 파일이면 이어서 센 번호). 부록·참고문헌처럼 여러 쪽을 빼려면 "
-               "'출제 제외'를 고르세요. 누르면 바로 저장됩니다.")
+    st.markdown("**:material/auto_awesome: 차시 자동 제안 — 본문의 장·절 제목으로 나누기**")
+    st.caption("원고 본문에서 '제1절', '2장', 'Chapter 3', '4차시'처럼 번호가 붙은 큰 제목을 찾아 차시 나누기안을 만듭니다"
+               "(AI를 쓰지 않아 비용이 들지 않습니다). 원고를 올릴 때 한 번 자동으로 적용되며, 아래 안을 보고 맞으면 "
+               "**이 안으로 다시 나누기**를 누르세요. 제목을 못 찾은 파일은 파일 전체를 한 차시로 둡니다.")
+    plan = chasi_detect.suggest(p)
+    st.dataframe(pd.DataFrame([{"차시": r["chasi"], "시작 쪽": pages[r["start"]]["label"], "끝 쪽": pages[r["end"]]["label"],
+                                "찾은 제목": r["title"] if r["found"] else "(제목을 찾지 못함 — 파일 전체)",
+                                "파일": srcname.get(r["src"], r["src"])} for r in plan]),
+                 hide_index=True, width="stretch")
+    same = all(pages[g]["chasi"] == r["chasi"] for r in plan for g in range(r["start"], r["end"] + 1))
+    if same:
+        st.caption(":green[:material/check:] 지금 차시 설정이 이 안과 같습니다.")
+    elif st.button("이 안으로 다시 나누기", icon=":material/splitscreen:",
+                   help="지금 차시 설정을 위 안으로 바꿉니다. 출제 제외 설정은 그대로입니다."):
+        n = chasi_detect.apply(p, plan)
+        st.session_state["range_msg"] = f"차시를 제안대로 {len(plan)}개로 나눴습니다({n}쪽 변경)."
+        st.rerun()
+
+with st.container(border=True):
+    st.markdown("**:material/format_list_numbered_rtl: 쪽 범위로 한꺼번에 지정 (차시·출제 제외)**")
+    st.caption("원고에 인쇄된 **쪽수**로 범위를 고르고 할 일을 정한 뒤 **적용**을 누르세요. 바로 저장됩니다. "
+               "한두 쪽만 고칠 때는 아래 표에서 직접 바꾼 뒤 **페이지 설정 저장**을 누르세요.")
     if msg := st.session_state.pop("range_msg", None):
         st.success(msg, icon=":material/check:")
     what = st.radio("할 일", ["차시 지정", "출제 제외", "제외 풀기"], horizontal=True, label_visibility="collapsed")
+    srcs = meta["sources"]
+    if len(srcs) > 1:  # 파일마다 쪽 번호가 다시 시작할 수 있으므로 파일을 먼저 고른다
+        sid = st.selectbox("원고 파일", [s["id"] for s in srcs], format_func=lambda i: srcname.get(i, i), key="range_src")
+    else:
+        sid = srcs[0]["id"]
+    sp = [x for x in pages if x["src"] == sid]  # 이 파일의 페이지(순서대로)
+    gs = [x["g"] for x in sp]
+    lab = {x["g"]: x["label"] for x in sp}
+
+    def _fmt(g):
+        return f"{lab[g]}쪽" + ("  (제외됨)" if pages[g]["excluded"] else "")
     c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
-    a = c1.number_input("시작 순번", 1, len(pages), 1)
-    b = c2.number_input("끝 순번", 1, len(pages), len(pages))
+    a = c1.selectbox("시작 쪽", gs, index=0, format_func=_fmt, key=f"range_a_{sid}")
+    b = c2.selectbox("끝 쪽", gs, index=len(gs) - 1, format_func=_fmt, key=f"range_b_{sid}")
     ch = c3.number_input("차시", 1, 99, 1, disabled=what != "차시 지정")
-    if c4.button("적용", width="stretch"):
-        for x in pages:
-            if a - 1 <= x["g"] <= b - 1:
+    if a > b:
+        st.error("끝 쪽이 시작 쪽보다 앞에 있습니다. 범위를 다시 골라 주세요.")
+    if c4.button("적용", width="stretch", disabled=a > b):
+        for x in sp:
+            if a <= x["g"] <= b:
                 if what == "차시 지정":
                     x["chasi"] = int(ch)
                 else:
                     x["excluded"] = what == "출제 제외"
+                    x["excl_reason"] = "직접 제외" if x["excluded"] else ""
         p.save_pages(pages)
-        st.session_state["range_msg"] = f"순번 {a}~{b}: {what}" + (f" {ch}차시" if what == "차시 지정" else "") + " 적용했습니다."
+        chasi_detect.sync_item_chasi(p)
+        st.session_state["range_msg"] = (f"원고 {lab[a]}쪽~{lab[b]}쪽({b - a + 1}장): {what}"
+                                         + (f" {ch}차시" if what == "차시 지정" else "") + " 적용했습니다.")
         st.rerun()
+st.markdown("**:material/table_rows: 페이지별 설정**")
+st.caption("**순번** = 파일을 첫 장부터 1, 2, 3…으로 센 번호(표지처럼 쪽 번호가 없는 장도 셈) · "
+           "**원고 쪽수** = 원고에 인쇄된 쪽 번호(엑셀·근거PDF에 쓰임) · **차시** = 교육 과정의 회차·단원 · "
+           "**제외** = 체크하면 그 페이지에서는 출제하지 않음 · **제외 이유** = '자동'은 프로그램이 뺀 것"
+           f"(글자 {criteria()['thresholds']['min_page_chars']}자 미만이거나 목차 페이지), '직접 제외'는 사람이 뺀 것입니다.")
 edited = st.data_editor(df, hide_index=True, width="stretch", height=420,
-                        disabled=["g", "순번", "파일", "원고 쪽수", "글자 수", "미리보기"],
-                        column_config={"g": None, "차시": st.column_config.NumberColumn(min_value=1, max_value=99, step=1)})
+                        disabled=["g", "순번", "파일", "원고 쪽수", "제외 이유", "글자 수", "미리보기"],
+                        column_config={"g": None,
+                                       "순번": st.column_config.NumberColumn(help="파일 첫 장부터 센 번호(표지 등 쪽 번호 없는 장 포함)"),
+                                       "원고 쪽수": st.column_config.TextColumn(help="원고에 인쇄된 쪽 번호 — 엑셀·근거PDF에 쓰임"),
+                                       "차시": st.column_config.NumberColumn(min_value=1, max_value=99, step=1,
+                                                                           help="교육 과정의 회차·단원"),
+                                       "제외": st.column_config.CheckboxColumn(help="체크하면 이 페이지에서는 출제하지 않음")})
 if st.button("페이지 설정 저장", type="primary", icon=":material/save:"):
     for x, (_, row) in zip(pages, edited.iterrows()):
+        if bool(row["제외"]) != x["excluded"]:
+            x["excl_reason"] = "직접 제외" if row["제외"] else ""
         x["chasi"], x["excluded"] = int(row["차시"]), bool(row["제외"])
     p.save_pages(pages)
+    chasi_detect.sync_item_chasi(p)
     st.toast("저장했습니다", icon=":material/check:")
 elig = [x for x in pages if not x["excluded"]]
 st.caption(f"출제 대상 {len(elig)}페이지 / 전체 {len(pages)}페이지 · 차시 "

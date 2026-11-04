@@ -242,6 +242,7 @@ class Project:
             batches.append({"batch": b["batch"], "created": b.get("created", ""), "kind": b.get("kind"),
                             "slots": len(b.get("slots") or []), "status": b.get("status"),
                             "providers": ", ".join(u.get("by_provider") or {}) or "-", "calls": u.get("calls"),
+                            "tokens_in": u.get("input_tokens") or None, "tokens_out": u.get("output_tokens") or None,
                             "models": " · ".join(f"{ROLE_KO.get(r, r)} {', '.join(m)}" for r, m in (u.get("models") or {}).items()
                                                  if r in ROLE_KO) or "-",
                             "minutes": minutes, "accepted": s.get("accepted"), "manual": s.get("manual")})

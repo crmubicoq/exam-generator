@@ -85,3 +85,52 @@ def test_last_project_is_remembered(tmp_path, monkeypatch):
     store.set_last_project("과정A", by="cli")
     st = store.last_project()
     assert st["project"] == "과정A" and st["by"] == "cli" and st["at"]
+
+
+def test_agent_sdk_records_tokens(monkeypatch):
+    """Claude 구독(Agent SDK) 경로도 토큰 사용량을 남긴다 — 모델별(보조 Haiku 포함) 입력·캐시·출력 합산. 실제 호출 없음."""
+    import claude_agent_sdk
+    from claude_agent_sdk import ResultMessage
+    from exam_gen.llm.client import LLMClient
+    from exam_gen.llm.settings import LLMSettings
+
+    def fake_query(prompt, options):
+        async def gen():
+            yield ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False, num_turns=1,
+                                session_id="t", total_cost_usd=0.5, structured_output={"ok": True},
+                                model_usage={"claude-opus-5-5": {"inputTokens": 100, "outputTokens": 40,
+                                                                 "cacheReadInputTokens": 1000, "cacheCreationInputTokens": 10},
+                                             "claude-haiku-5-5": {"inputTokens": 5, "outputTokens": 2,
+                                                                  "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0}})
+        return gen()
+    monkeypatch.setattr(claude_agent_sdk, "query", fake_query)
+    c = LLMClient(LLMSettings(provider="claude_agent_sdk"))
+    out = c.structured("sys", "user", {"type": "object"}, model="claude-opus-5-5", task="generate")
+    assert out == {"ok": True}
+    assert c.usage["input_tokens"] == 1115 and c.usage["output_tokens"] == 42 and c.usage["cost_usd"] == 0.5
+    assert c.usage["models"]["generate"] == {"claude-opus-5-5": 1}
+
+
+def test_list_litellm_models(monkeypatch):
+    """LiteLLM 모델 목록: /v1/models 주소 만들기(주소가 /v1로 끝나도), 키 헤더, 중복 제거·정렬. 실제 서버 호출 없음."""
+    import httpx
+    from exam_gen.llm.client import LLMError, list_openai_models
+    seen = {}
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"data": [{"id": "claude-sonnet-5-5"}, {"id": "deepseek-v4"}, {"id": "claude-sonnet-5-5"}, {"x": 1}]}
+
+    def fake_get(url, headers=None, timeout=None):
+        seen["url"], seen["headers"] = url, headers
+        return R()
+    monkeypatch.setattr(httpx, "get", fake_get)
+    assert list_openai_models("http://10.0.0.1:4000/", "k") == ["claude-sonnet-5-5", "deepseek-v4"]
+    assert seen["url"] == "http://10.0.0.1:4000/v1/models" and seen["headers"] == {"Authorization": "Bearer k"}
+    list_openai_models("http://10.0.0.1:4000/v1")
+    assert seen["url"] == "http://10.0.0.1:4000/v1/models" and seen["headers"] == {}
+    import pytest
+    with pytest.raises(LLMError):
+        list_openai_models("  ")

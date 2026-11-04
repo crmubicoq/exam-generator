@@ -75,6 +75,10 @@ def model_choices(provider: str) -> dict[str, str]:
         return {k: v for k, v in CLAUDE_MODELS.items() if k or provider == "claude_agent_sdk"}
     if provider == "codex_cli":
         return codex_models()
+    if provider == "openai_compat":  # LiteLLM 서버에서 불러온 목록(사이드바 '모델 목록 불러오기')을 앞에 둔다
+        got = list((load().extra or {}).get("litellm_models") or [])
+        if got:
+            return {m: f"{m} — 사내 LiteLLM 서버에 있는 모델" for m in got}
     return {m: m for m in MODEL_PRESETS.get(provider, []) if m}
 
 

@@ -84,6 +84,8 @@ if infos:
                         "회차": b["batch"], "날짜": _t(b["created"]), "종류": KIND.get(b["kind"], b["kind"]),
                         "슬롯": b["slots"], "상태": b["status"], "AI": b["providers"], "실제 모델": b.get("models", "-"),
                         "AI 호출": b["calls"],
+                        "입력 토큰(만)": round(b["tokens_in"] / 1e4) if b.get("tokens_in") else None,
+                        "출력 토큰(만)": round(b["tokens_out"] / 1e4) if b.get("tokens_out") else None,
                         "걸린 시간(분)": b["minutes"], "통과": b["accepted"], "수동확인": b["manual"],
                     } for b in x["batches"]]), hide_index=True, width="stretch")
                 else:

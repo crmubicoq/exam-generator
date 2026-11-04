@@ -28,6 +28,21 @@ class LLMError(RuntimeError):
     pass
 
 
+def list_openai_models(base_url: str, api_key: str = "", timeout: float = 15) -> list[str]:
+    """LiteLLM(OpenAI 호환) 서버의 모델 목록 — GET /v1/models. AI 호출이 아니라 비용이 들지 않는다."""
+    import httpx
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        raise LLMError("LiteLLM 주소를 먼저 넣어 주세요.")
+    url = base + ("/models" if base.endswith("/v1") else "/v1/models")
+    r = httpx.get(url, headers={"Authorization": f"Bearer {api_key}"} if api_key else {}, timeout=timeout)
+    if r.status_code >= 400:
+        raise LLMError(f"LiteLLM 오류 {r.status_code}: {r.text[:200]}")
+    data = r.json()
+    ids = [m.get("id") for m in (data.get("data") or []) if isinstance(m, dict) and m.get("id")]
+    return sorted(dict.fromkeys(ids))
+
+
 class LLMClient:
     def __init__(self, settings: LLMSettings):
         self.s = settings
@@ -155,6 +170,12 @@ class LLMClient:
         if res.total_cost_usd:
             self.usage["cost_usd"] += res.total_cost_usd
         mu = res.model_usage or {}
+        # 토큰 사용량: 모델별(보조 Haiku 포함) 입력(캐시 읽기·쓰기 포함)·출력 토큰을 더한다(2026-11-04, 그동안 0으로 기록됨)
+        for v in mu.values():
+            if isinstance(v, dict):
+                self.usage["input_tokens"] += int(v.get("inputTokens") or 0) + int(v.get("cacheReadInputTokens") or 0) \
+                    + int(v.get("cacheCreationInputTokens") or 0)
+                self.usage["output_tokens"] += int(v.get("outputTokens") or 0)
         if mu:  # 모델을 비워 두면 계정 기본값으로 응답한다 — 실제 모델 이름을 남긴다
             # Claude Code가 보조 작업에 Haiku를 함께 쓰기도 하므로, 요청한 모델이 응답에 있으면 그것을 기록한다
             # 독립 풀이처럼 답이 짧으면 보조 Haiku 출력이 더 길 수 있어, 다른 모델이 있으면 Haiku는 빼고 고른다(2026-10-28)

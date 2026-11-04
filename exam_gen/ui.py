@@ -266,6 +266,22 @@ def settings_box():
         if "openai_compat" in used:
             bu = st.text_input("LiteLLM 주소", value=s.openai_base_url, placeholder="http://192.168.x.x:4000")
             ok = st.text_input("API 키", value=s.openai_api_key, type="password", help="Windows 자격 증명 저장소에 보관됩니다")
+            st.caption("주소·키를 넣고 **모델 목록 불러오기**를 누르면 서버에 있는 모델이 위 모델 선택 목록에 나옵니다"
+                       "(AI 호출이 아니라 비용이 들지 않습니다). 그다음 모델을 고르고 **저장**하세요.")
+            if st.button("모델 목록 불러오기", icon=":material/list:", width="stretch"):
+                try:
+                    from .llm.client import list_openai_models
+                    models = list_openai_models(bu, ok)
+                    cur = llm_settings.load()
+                    cur.extra = {**(cur.extra or {}), "litellm_models": models}
+                    llm_settings.save(cur)
+                    st.session_state["litellm_msg"] = ("ok", f"모델 {len(models)}개를 불러왔습니다: " + ", ".join(models[:12])
+                                                       + (" …" if len(models) > 12 else ""))
+                    st.rerun()
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"모델 목록을 불러오지 못했습니다: {e}")
+            if m := st.session_state.pop("litellm_msg", None):
+                st.success(m[1])
         if used & set(llm_settings.OAUTH_PROVIDERS):
             st.caption("구독 로그인 방식은 이 PC에 로그인한 계정을 씁니다. Claude는 'Claude_로그인.bat', "
                        "Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. 이 도구는 로그인 정보를 저장하지 않습니다.")
@@ -286,7 +302,8 @@ def settings_box():
                     provider=provider, provider_solve=ps, provider_review=pr,
                     model_generate=mg, model_solve=ms, model_review=mr,
                     anthropic_api_key=ak, openai_base_url=bu, openai_api_key=ok,
-                    chunk_size=int(chunk), workers=int(workers), max_tokens=s.max_tokens, timeout_sec=s.timeout_sec))
+                    chunk_size=int(chunk), workers=int(workers), max_tokens=s.max_tokens, timeout_sec=s.timeout_sec,
+                    extra=llm_settings.load().extra))
                 st.success("저장했습니다.")
             except RuntimeError as e:
                 st.error(str(e))

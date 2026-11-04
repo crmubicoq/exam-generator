@@ -70,7 +70,9 @@ def live():
     gf = pr.get("gate_fail", {})
     GATE = {"G1": "형식", "G2": "근거", "G3": "규칙", "G4": "독립 풀이", "G5": "AI 검수", "G6": "중복", "누락": "응답 누락"}
     st.caption("자동 검증 탈락 횟수: " + " · ".join(f"{GATE.get(k, k)} {v}" for k, v in gf.items() if v) +
-               f" · AI 호출 {pr.get('usage', {}).get('calls', 0)}회")
+               f" · AI 호출 {pr.get('usage', {}).get('calls', 0)}회"
+               + (f" · 토큰 입력 {pr['usage']['input_tokens'] / 1e4:,.0f}만·출력 {pr['usage'].get('output_tokens', 0) / 1e4:,.0f}만"
+                  if (pr.get("usage") or {}).get("input_tokens") else ""))
     if status in ("done", "partial"):
         manual = pr.get("manual", 0)
         st.success("출제가 끝났습니다. 다음 순서: **품질 리포트**에서 보완할 점 확인 → **검수**에서 문항 확인·승인 → **출력**."

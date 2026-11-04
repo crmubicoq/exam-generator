@@ -18,15 +18,14 @@
 - **난이도 기준은 담당부서가 정한다**(사용자 원칙). 사용자가 난이도별 기준표(묻는 능력·근거 범위·패턴·권장 비중 20/40/25/15 등)를 보여 줬다 — 담당부서 확정 여부 확인 후 반영. 메일로 정할 항목은 `docs/담당자_확인사항.md`.
 - 남은 문제는 프로그램보다 **출제 품질**(AI 판정이 의도보다 낮음, 최상 0).
 
-## 다음 할 일 (2026-11-04) — `docs/TODO.md` 2-10절
-1. 난이도 기준표 반영(확정 여부 확인 후), **출제 중 절전 막기**, 홈 시간 안내(3시간 15분), SDK 토큰 기록, LiteLLM 모델 목록 버튼, 담당자 확인사항 보완.
-2. **부서장 공유 메일** 준비 + **프로그램 소개 문서**·**사용 매뉴얼** 제작(원고 문장 제외).
-3. 그 뒤 **휴대용 패키지 재빌드**(현재 ZIP 20261103은 11-03 오후 수정 전).
-4. 실사용 피드백 → 난이도 기준 결정 → **300문항 파이널 테스트**(약 3시간 15분) — 사용자 승인 후.
-5. [알림] 섞어 쓰기 교차 검증 테스트(출제 Claude + G4·G5 Codex), 사내 LiteLLM 시험(주소·키 받은 뒤, 보안 정책 확인).
+## 다음 할 일 (2026-11-04 이후) — `docs/TODO.md` 2-10절
+1. 11-04: 절전 막기·토큰 기록·LiteLLM 모델 목록·소개서/사용 매뉴얼(HTML·Word·PDF, `tools/build_docs.py`)·휴대용 패키지 재빌드 완료(`docs/worklog/2026-11-04.md`). 부서장 메일(Claude Max 구독 요청 포함)은 사용자가 발송.
+2. 11-09 주 실사용 피드백 반영(프로그램 변경 시 패키지 '프로그램만' ZIP으로 배포).
+3. 난이도 기준표는 담당부서 확인 후 반영(사용자: 아직 반영하지 않음). 그다음 **300문항 파이널 테스트**(약 3시간 15분) — 사용자 승인 후.
+4. [알림] 섞어 쓰기 교차 검증 테스트(출제 Claude + G4·G5 Codex), 사내 LiteLLM 시험(주소·키 받은 뒤 '모델 목록 불러오기', 보안 정책 확인).
 
 ## 개발 메모
-- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 88개, `pytest.ini`로 tests/만 탐색).
+- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 90개, `pytest.ini`로 tests/만 탐색).
 - CLI: `python -m exam_gen.cli new|run|export|report|pool <프로젝트>` (`run --provider claude_agent_sdk|codex_cli`).
 - 출력 콘솔이 cp949라 한글이 깨지면 `PYTHONIOENCODING=utf-8`.
 - 프롬프트를 바꾸면 `exam_gen/config.py`의 `PROMPT_VERSION`을 올린다.

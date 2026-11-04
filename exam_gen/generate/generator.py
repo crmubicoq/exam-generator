@@ -22,6 +22,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import difficulty_policy, integrity
+from ..keep_awake import keep_awake
 from ..config import PROMPT_VERSION, criteria
 from ..llm.client import LLMClient, LLMError
 from ..llm.prompts import render
@@ -75,6 +76,12 @@ class Pipeline:
 
     # ---------- 실행 ----------
     def run(self):
+        # 출제하는 동안 윈도우 자동 절전을 막는다(노트북 덮개 닫기·직접 절전은 막을 수 없음)
+        with keep_awake() as awake:
+            self.prog["keep_awake"] = awake
+            self._run()
+
+    def _run(self):
         RUNNING[(self.p.slug, self.batch)] = self
         self.p.set_batch_status(self.batch, "running")
         self.p.log("batch_start", {"slots": len(self.slots), "providers": {r: self.s.provider_for(r) for r in ("generate", "solve", "review")},

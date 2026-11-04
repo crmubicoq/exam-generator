@@ -264,7 +264,9 @@ for x in problems:
     st.error(x)
 confirm = True
 if not mock and n and not problems:
-    confirm = st.checkbox("위 예상 시간·사용량을 확인했습니다. 출제하는 동안 컴퓨터를 끄거나 절전 모드로 두지 않습니다.")
+    st.caption("출제하는 동안 프로그램이 윈도우 자동 절전을 막습니다. 다른 화면·프로그램을 써도 됩니다. "
+               "다만 **검은 창을 닫거나, 노트북 덮개를 닫거나, 직접 절전·종료하면 출제가 멈춥니다**(멈추면 '출제 진행'에서 '이어서 출제').")
+    confirm = st.checkbox("위 예상 시간·사용량을 확인했습니다. 출제가 끝날 때까지 검은 창과 노트북 덮개를 닫지 않습니다.")
 c1, c2 = st.columns([1, 3])
 if c1.button("옵션만 저장", icon=":material/save:"):
     p.update_meta(options=new_opts)

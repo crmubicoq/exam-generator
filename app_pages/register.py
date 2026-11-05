@@ -31,8 +31,8 @@ def step(n: int, title: str, done: bool | None, icon: str):
 meta = p.meta
 step(1, "원고 파일 올리기", bool(meta["sources"]), "upload_file")
 with st.container(border=True):
-    st.caption("PDF·PPTX·DOCX·HWP를 올립니다. 모두 PDF로 바꿔 근거 표시에 씁니다. 원고가 여러 파일이면 차시 순서대로 "
-               "올리세요(파일 순서가 차시 순서가 됩니다).")
+    st.caption("PDF·PPTX·DOCX·HWP를 올립니다. 모두 PDF로 바꿔 근거 표시에 씁니다. 원고가 여러 파일이면 한 번에 골라 올려도 **파일 이름순**으로 등록되고, "
+               "등록한 뒤 순서를 바꿀 수 있습니다(파일 순서가 차시 순서가 됩니다).")
     for kind, msg in ss.pop("reg_msgs", []):
         (st.success if kind == "ok" else st.error)(msg)
     # 등록이 끝나면 업로드 칸을 비운다(같은 파일을 실수로 두 번 등록하지 않게)
@@ -43,7 +43,9 @@ with st.container(border=True):
     if dup:
         st.warning(f"이미 등록된 파일입니다: {', '.join(dup)} — 다시 등록하면 같은 원고가 두 번 들어갑니다. "
                    "수정본이면 맨 아래 '나중에 원고 수정본이 오면'에서 새 판으로 교체하세요.", icon=":material/content_copy:")
-    new = [u for u in ups or [] if u.name not in have]
+    # 한 번에 여러 파일을 고르면 브라우저가 넘겨주는 순서가 일정하지 않다 — 파일 이름순(숫자는 크기순)으로 등록한다
+    _nat = lambda s: [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]  # noqa: E731
+    new = sorted([u for u in ups or [] if u.name not in have], key=lambda u: _nat(u.name))
     if new and st.button(f"{len(new)}개 파일 등록", type="primary", icon=":material/upload:"):
         msgs = []
         for up in new:
@@ -63,7 +65,22 @@ with st.container(border=True):
         ss["src_up_n"] = ss.get("src_up_n", 0) + 1
         st.rerun()
     if meta["sources"]:
-        st.markdown("등록된 원고: " + " · ".join(f"**{x['filename']}**({x['pages']}쪽)" for x in meta["sources"]))
+        st.markdown("**등록된 원고** (이 순서대로 이어 붙이고, 차시도 이 순서로 매깁니다)")
+        for i, x in enumerate(meta["sources"]):
+            r1, r2, r3 = st.columns([8, 1, 1], vertical_alignment="center")
+            r1.markdown(f"{i + 1}. **{x['filename']}** ({x['pages']}쪽)")
+            if len(meta["sources"]) > 1:
+                if r2.button("", icon=":material/arrow_upward:", key=f"src_up_btn_{x['id']}", disabled=i == 0,
+                             help="위로(앞 순서로)"):
+                    p.move_source(x["id"], -1)
+                    st.rerun()
+                if r3.button("", icon=":material/arrow_downward:", key=f"src_dn_btn_{x['id']}",
+                             disabled=i == len(meta["sources"]) - 1, help="아래로(뒤 순서로)"):
+                    p.move_source(x["id"], 1)
+                    st.rerun()
+        if len(meta["sources"]) > 1:
+            st.caption("여러 파일을 한 번에 올리면 **파일 이름순**으로 등록합니다(이름 앞에 01_, 02_를 붙이면 정확합니다). "
+                       "순서가 틀렸으면 화살표로 바꾸세요. 이미 출제한 문항의 쪽수·근거 위치는 그대로 따라갑니다.")
 
 if not meta["sources"]:
     st.stop()
@@ -156,7 +173,7 @@ with st.container(border=True):
 
 with st.container(border=True):
     st.markdown("**:material/format_list_numbered_rtl: 쪽 범위로 한꺼번에 지정 (차시·출제 제외)**")
-    st.caption("원고에 인쇄된 **쪽수**로 범위를 고르고 할 일을 정한 뒤 **적용**을 누르세요. 바로 저장됩니다. "
+    st.caption("할 일을 고르고, 원고에 인쇄된 **쪽 번호**를 시작 쪽·끝 쪽 칸에 입력(Enter)한 뒤 **적용**을 누르세요. 바로 저장됩니다. "
                "한두 쪽만 고칠 때는 아래 표에서 직접 바꾼 뒤 **페이지 설정 저장**을 누르세요.")
     if msg := st.session_state.pop("range_msg", None):
         st.success(msg, icon=":material/check:")
@@ -173,11 +190,26 @@ with st.container(border=True):
     def _fmt(g):
         return f"{lab[g]}쪽" + ("  (제외됨)" if pages[g]["excluded"] else "")
     c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
-    a = c1.selectbox("시작 쪽", gs, index=0, format_func=_fmt, key=f"range_a_{sid}")
-    b = c2.selectbox("끝 쪽", gs, index=len(gs) - 1, format_func=_fmt, key=f"range_b_{sid}")
+    num = {int(v): g for g, v in lab.items() if str(v).isdigit()}
+    if len(num) == len(lab):  # 쪽 번호가 모두 숫자면 숫자를 입력하고 Enter(담당자 피드백 2026-11-05)
+        lo, hi = min(num), max(num)
+        a_no = c1.number_input("시작 쪽", lo, hi, lo, step=1, key=f"range_a_no_{sid}",
+                               help="원고에 인쇄된 쪽 번호를 입력하고 Enter를 누르세요.")
+        b_no = c2.number_input("끝 쪽", lo, hi, hi, step=1, key=f"range_b_no_{sid}",
+                               help="원고에 인쇄된 쪽 번호를 입력하고 Enter를 누르세요.")
+        a, b = num.get(int(a_no)), num.get(int(b_no))
+        missing = [str(x) for x, g in ((a_no, a), (b_no, b)) if g is None]
+        if missing:
+            st.error(f"원고에 {', '.join(missing)}쪽이 없습니다. 아래 표의 '원고 쪽수'를 확인하세요.")
+            a, b = 0, -1  # 적용 막기
+    else:  # 로마 숫자 등 숫자가 아닌 쪽 번호가 있으면 목록에서 고른다
+        a = c1.selectbox("시작 쪽", gs, index=0, format_func=_fmt, key=f"range_a_{sid}")
+        b = c2.selectbox("끝 쪽", gs, index=len(gs) - 1, format_func=_fmt, key=f"range_b_{sid}")
     ch = c3.number_input("차시", 1, 99, 1, disabled=what != "차시 지정")
-    if a > b:
-        st.error("끝 쪽이 시작 쪽보다 앞에 있습니다. 범위를 다시 골라 주세요.")
+    if a > b and a != 0:
+        st.error("끝 쪽이 시작 쪽보다 앞에 있습니다. 범위를 다시 입력해 주세요.")
+    elif a <= b:
+        st.caption(f"적용 범위: 원고 {lab[a]}쪽 ~ {lab[b]}쪽 ({b - a + 1}장) — 확인 후 **적용**을 누르세요.")
     if c4.button("적용", width="stretch", disabled=a > b):
         for x in sp:
             if a <= x["g"] <= b:

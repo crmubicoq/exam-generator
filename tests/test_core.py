@@ -297,3 +297,33 @@ def test_difficulty_policy_per_project(tmp_path, monkeypatch):
     assert DP.version(a).startswith("프로젝트·임시") and DP.label(b).startswith("공통 기준")
     assert DP.use_common(a) and not DP.has_project_policy(a) and DP.rubric(a)["상"] == "공통 상 기준"
     assert (tmp_path / "a" / "difficulty_policy.json.bak").exists()
+
+
+def test_move_source_keeps_items_and_renumbers_chasi(tmp_path):
+    """원고 순서 바꾸기: 문항의 페이지·근거 위치는 (원고, 원고 안 페이지) 기준으로 따라가고, 차시는 새 파일 순서대로 다시 매긴다."""
+    import shutil
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.llm.settings import LLMSettings
+    from exam_gen.store import Project
+    from pathlib import Path
+    SAMPLE = Path(__file__).resolve().parents[1] / "input_17-43.pdf"
+    a, b = tmp_path / "01_앞.pdf", tmp_path / "02_뒤.pdf"
+    shutil.copyfile(SAMPLE, a)
+    shutil.copyfile(SAMPLE, b)
+    p = Project.create("원고 순서 시험")
+    s1, s2 = p.add_source(a, a.name), p.add_source(b, b.name)
+    for s in (s1, s2):
+        p.set_page_map(s["id"], 17, "printed", True)
+    assert [x["chasi"] for x in p.pages][0] == 1 and p.pages[-1]["chasi"] == 2
+    opts = dict(criteria()["defaults"])
+    first = [x["g"] for x in p.pages if x["src"] == s1["id"] and not x["excluded"]][:3]
+    start_batch(p, LLMSettings(provider="mock", workers=1), build_slots(p.pages, {g: 1 for g in first}, opts), opts,
+                background=False)
+    before = {it["key"]: (p.pages[it["page"]]["src"], p.pages[it["page"]]["idx"]) for it in p.items()}
+    assert before and all(src == s1["id"] for src, _ in before.values())
+    assert p.move_source(s1["id"], 1) and not p.move_source(s1["id"], 1)  # 맨 뒤에서 더 내려갈 수 없다
+    assert [s["id"] for s in p.meta["sources"]] == [s2["id"], s1["id"]]
+    after = {it["key"]: (p.pages[it["page"]]["src"], p.pages[it["page"]]["idx"]) for it in p.items()}
+    assert after == before  # 같은 원고·같은 페이지를 그대로 가리킨다
+    assert p.pages[0]["src"] == s2["id"] and p.pages[0]["chasi"] == 1 and p.pages[-1]["chasi"] == 2
+    assert all(it["chasi"] == p.pages[it["page"]]["chasi"] == 2 for it in p.items())

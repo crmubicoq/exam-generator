@@ -32,12 +32,43 @@ MODES = ["최초 출제", "추가 출제", "페이지 재출제"]
 mode = st.radio("출제 종류", MODES, horizontal=True, index=1 if items else 0,
                 captions=["처음 출제할 때", "이미 있는 문항에 더 낼 때(겹치지 않게)", "문항이 없거나 적은 페이지만 다시 낼 때"])
 
+# ---------- 문항 수 (담당자 피드백 2026-11-05: 수량을 먼저 정하고 비율을 정한다) ----------
+st.subheader(":material/pin: 문항 수")
+diff_counts = None
+how = None
+_qty = {}
+if mode == "최초 출제":
+    c1, c2 = st.columns(2)
+    total = c1.number_input("필요 문항 수", 1, 3000, int(opts["total"]))
+    extra = c2.number_input("여유분 (%)", 0, 50, int(opts["pool_extra_pct"]),
+                            help="검수에서 지울 문항에 대비해 조금 더 출제합니다. 출력할 때 '최종 문항 자동 선정'으로 필요한 수만 고릅니다.")
+    n = math.ceil(total * (1 + extra / 100))
+    _qty = dict(total=total, pool_extra_pct=extra)
+    st.caption(f"실제 출제 **{n}문항** = 필요 {total}문항 + 여유분 {extra}% (검수에서 지울 문항 대비)")
+    alloc = allocate(pages, n)
+elif mode == "추가 출제":
+    how = st.radio("수량 입력 방식", ["난이도별 수량", "총 수량 + 난이도 %"], horizontal=True)
+    if how == "난이도별 수량":
+        cols = st.columns(4)
+        diff_counts = {lv: cols[i].number_input(f"{lv} 문항 수", 0, 1000, 0, key=f"dc_{lv}") for i, lv in enumerate(LV)}
+        n = sum(diff_counts.values())
+    else:
+        n = st.number_input("추가 문항 수", 0, 3000, 50)
+        st.caption("난이도 구성은 아래 난이도 비율(%)로 나눕니다.")
+    alloc = allocate(pages, n, existing=dict(existing_pages)) if n else {}
+else:
+    st.caption("출제 진행·품질 리포트에서 문항이 없는 페이지가 보이면, 아래 '페이지 배분' 표의 '이번 출제' 칸에 페이지별 문항 수를 넣어 그 페이지만 다시 출제합니다.")
+    alloc = {}
+    n = 0
+
+
 # ---------- 공통 비율 ----------
+st.subheader(":material/percent: 난이도·유형 비율")
 with st.container(border=True):
     st.markdown(":material/signal_cellular_alt: **난이도 비율 (%)** — 합계 100")
     cols = st.columns(4)
     dpct = {lv: cols[i].number_input(lv, 0, 100, int(opts["difficulty_pct"].get(lv, 0)), key=f"d_{lv}") for i, lv in enumerate(LV)}
-    d_cnt = {lv: cols[i].empty() for i, lv in enumerate(LV)}  # 문항 수는 아래에서 수량이 정해진 뒤 채운다
+    d_cnt = {lv: cols[i].empty() for i, lv in enumerate(LV)}  # 문항 수는 아래에서 구성이 정해진 뒤 채운다
     dsum = sum(dpct.values())
     (st.success if dsum == 100 else st.error)(f"난이도 합계 {dsum}%")
     with st.expander(f"난이도 기준 — {difficulty_policy.label(p)}", icon=":material/menu_book:"):
@@ -84,35 +115,16 @@ with st.container(border=True):
 
 new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct": pos, "combo_pct": combo,
             "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup, "difficulty_calibrate": calib,
-            "fast_mode": fast}
-
-# ---------- 수량과 페이지 할당 ----------
-st.subheader(":material/grid_view: 문항 수와 페이지 배분")
-diff_counts = None
-how = None
-if mode == "최초 출제":
-    c1, c2 = st.columns(2)
-    total = c1.number_input("필요 문항 수", 1, 3000, int(opts["total"]))
-    extra = c2.number_input("여유분 (%)", 0, 50, int(opts["pool_extra_pct"]),
-                            help="검수에서 지울 문항에 대비해 조금 더 출제합니다. 출력할 때 '최종 문항 자동 선정'으로 필요한 수만 고릅니다.")
-    n = math.ceil(total * (1 + extra / 100))
-    new_opts.update(total=total, pool_extra_pct=extra)
-    alloc = allocate(pages, n)
-elif mode == "추가 출제":
-    how = st.radio("수량 입력 방식", ["난이도별 수량", "총 수량 + 난이도 %"], horizontal=True)
-    if how == "난이도별 수량":
-        cols = st.columns(4)
-        diff_counts = {lv: cols[i].number_input(f"{lv} 문항 수", 0, 1000, 0, key=f"dc_{lv}") for i, lv in enumerate(LV)}
-        n = sum(diff_counts.values())
-    else:
-        n = st.number_input("추가 문항 수", 0, 3000, 50)
+            "fast_mode": fast, **_qty}
+if mode == "추가 출제":
+    if how == "총 수량 + 난이도 %":
         diff_counts = largest_remainder(n, dpct)
-    st.caption(f"난이도 구성: {' · '.join(f'{k} {v}' for k, v in diff_counts.items())} · 기존 {len(items)}문항과 겹치지 않게 출제합니다.")
-    alloc = allocate(pages, n, existing=dict(existing_pages)) if n else {}
-else:
-    st.caption("출제 진행·품질 리포트에서 문항이 없는 페이지가 보이면, 아래 표의 '이번 출제' 칸에 페이지별 문항 수를 넣어 그 페이지만 다시 출제합니다.")
-    alloc = {}
-    n = 0
+    st.caption(f"추가 출제 난이도 구성: {' · '.join(f'{k} {v}' for k, v in diff_counts.items())} · "
+               f"기존 {len(items)}문항과 겹치지 않게 출제합니다.")
+
+# ---------- 페이지 배분 ----------
+st.subheader(":material/grid_view: 페이지 배분")
+st.caption("위 문항 수를 원고 분량(글자 수)에 맞춰 페이지마다 나눈 결과입니다. 차시가 나뉘어 있으면 차시별로 먼저 나눕니다.")
 
 forced = st.toggle("페이지별 문항 수 직접 지정", value=mode == "페이지 재출제", disabled=mode == "페이지 재출제",
                    help="끄면 분량(글자 수)에 맞춰 자동으로 나눕니다. 보통은 끈 채로 둡니다.")

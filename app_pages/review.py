@@ -1,6 +1,7 @@
-"""4. 검수(G7) — 왼쪽 문항 카드 목록, 오른쪽 읽기 화면(문항·원고 근거). 수정은 펼쳐서 한다."""
+"""4. 검수(G7) — 왼쪽 문항 목록 · 가운데 문항(보기마다 근거 인용문) · 오른쪽 원고 근거(스크롤해도 고정).
+수정·검증 상세·이력은 문항 아래에서 펼친다. '원고 근거를 새 창으로 보기'를 켜면 원고 근거를 새 창(app_pages/evidence_window.py)에서
+따라 보여 준다(담당자 피드백 2026-11-05)."""
 import copy
-import html
 import re
 from collections import Counter
 
@@ -11,16 +12,9 @@ from exam_gen import integrity, review_ops, ui
 from exam_gen.generate import choice_builder
 from exam_gen.ingest.page_map import format_pages
 from exam_gen.llm import settings as llm_settings
-from exam_gen.output.evidence_pdf import item_viewer_payload, render_item_page
-
-try:  # 검수 화면 PDF 뷰어(선택 패키지) — 없으면 페이지 이미지로 보여 준다
-    from streamlit_pdf_viewer import pdf_viewer
-except ImportError:
-    pdf_viewer = None
+from exam_gen.review_view import evidence_panel, question_html, quote_box, quote_targets
 
 PAGE_SIZE = 50          # 목록 한 쪽에 담는 문항 수
-LIST_H = 660            # 왼쪽 목록 상자 높이(px) — 안에서만 스크롤
-BODY_H = 480            # 오른쪽 문항 본문 상자 높이(px)
 CIRCLED = "①②③④"
 QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경", ()), "skip": ("AI 검증 생략", ()),
           "auto": ("자동통과", ("auto_pass",)),
@@ -29,6 +23,8 @@ QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경",
 _ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:material/task_alt:]",
          "warn": ":orange[:material/warning:]", "manual": ":red[:material/error:]", "deleted": ":gray[:material/delete:]"}
 _LIST_CSS = """<style>
+.st-key-review_list {max-height:calc(100vh - 21rem); min-height:260px; overflow-y:auto; flex:0 0 auto;
+  border:1px solid rgba(49,51,63,.2); border-radius:.5rem; padding:.4rem;}
 .st-key-review_list, .st-key-review_list [data-testid="stVerticalBlock"] {gap:0.1rem !important;}
 .st-key-review_list button {justify-content:flex-start; text-align:left; min-height:2rem; padding:0.1rem 0.6rem;}
 .st-key-review_list button p {white-space:normal; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2;
@@ -47,12 +43,6 @@ def _pages_of(it) -> str:
 def _plain(text: str) -> str:
     """카드 미리보기용: '다음 괄호 안에 … 작성하시오.' 같은 지시문을 빼고 본문만."""
     return re.sub(r"^다음[^.\[]*?(작성하시오|고르시오)\.?\s*", "", text or "").strip("[] ")
-
-
-def _chip(color: str, text: str) -> str:
-    """근거PDF와 같은 색(노랑·주황)의 범례 견본."""
-    return (f"<span style='border:3px solid {color};border-radius:4px;padding:0 6px;"
-            f"font-size:0.85em'>{text}</span>")
 
 
 def _s(v) -> str:
@@ -139,29 +129,42 @@ def _leave_to_next():
 saved = view[pos]                                 # 저장된 상태(미리보기·승인 판단용)
 it = copy.deepcopy(saved)                         # 편집용 사본
 
-left, right = st.columns([3.6, 6.4], gap="large")
+# ---------- 배치: 목록 | 문항 | 원고 근거 (담당자 피드백 2026-11-05) ----------
+# '원고 근거를 새 창으로 보기'를 켜면 오른쪽 칸을 빼고 문항을 넓게 쓴다. 새 창은 지금 문항을 자동으로 따라간다.
+popout = st.toggle("원고 근거를 새 창으로 보기", key="review_popout",
+                   help="모니터가 두 대일 때 편합니다. 켜면 '원고 근거 새 창 열기' 버튼이 나오고, 새 창은 여기서 고른 문항의 "
+                        "원고 근거를 자동으로 보여 줍니다.")
+if popout:
+    _cur = {"project": p.slug, "key": saved["key"], "updated": saved.get("updated", "")}
+    if last_project().get("review_current") != _cur:
+        set_pref(review_current=_cur)
+    left, mid = st.columns([2.2, 7.8], gap="medium")
+    right = None
+else:
+    left, mid, right = st.columns([2.1, 3.9, 4.0], gap="medium")
 
-# ================= 왼쪽: 문항 카드 목록 =================
+# ================= 왼쪽: 문항 목록 (창 높이에 맞춤) + 이전·다음 =================
 with left:
     n_pages = (len(view) - 1) // PAGE_SIZE + 1
     lp = pos // PAGE_SIZE
     st.markdown(_LIST_CSS, unsafe_allow_html=True)
     st.caption(f"{QUEUES[queue][0]} {len(view)}문항" + (f" · 목록 {lp + 1}/{n_pages}" if n_pages > 1 else ""))
-    # 고정 높이 상자 안에서만 스크롤 — 문항이 300개여도 페이지가 길어지지 않는다
-    with st.container(height=LIST_H, key="review_list"):
+    with st.container(key="review_list"):  # 높이는 _LIST_CSS(창 높이 기준), 안에서만 스크롤
         for x in view[lp * PAGE_SIZE:(lp + 1) * PAGE_SIZE]:
             cur = x["key"] == saved["key"]
             label = (f"{_ICON.get(x['status'], '')} **{x['key']}** · {ui.TYPE_KO[x['type']][:2]}·{x['difficulty']}"
                      f" · p.{_pages_of(x)} · {_plain(x.get('stem', ''))[:40]}")
             st.button(label, key=f"pick_{x['key']}", type="primary" if cur else "tertiary", width="stretch",
                       on_click=_pick, args=(x["key"],), help=x.get("stem", "")[:200])
-    if n_pages > 1:
-        l1, l2, l3 = st.columns([1, 2, 1], vertical_alignment="center")
-        l1.button("", icon=":material/keyboard_double_arrow_left:", key="list_prev", disabled=lp == 0,
-                  on_click=_go, args=((lp - 1) * PAGE_SIZE,), help="목록 앞쪽")
-        l2.markdown(f"<div style='text-align:center'>목록 {lp + 1} / {n_pages}</div>", unsafe_allow_html=True)
-        l3.button("", icon=":material/keyboard_double_arrow_right:", key="list_next", disabled=lp >= n_pages - 1,
-                  on_click=_go, args=((lp + 1) * PAGE_SIZE,), help="목록 뒤쪽")
+    # 이전·다음 문항 — 목록 쪽(50문항 단위)은 현재 문항을 따라 자동으로 넘어간다
+    n1, n2, n3 = st.columns([1, 1.3, 1], vertical_alignment="center", gap="small")
+    n1.button("", icon=":material/chevron_left:", width="stretch", disabled=pos == 0,
+              on_click=_go, args=(pos - 1,), key="nav_prev", help="이전 문항")
+    n2.markdown(f"<div style='text-align:center;white-space:nowrap'>{pos + 1} / {len(keys)}</div>",
+                unsafe_allow_html=True)
+    n3.button("", icon=":material/chevron_right:", width="stretch", disabled=pos == len(keys) - 1,
+              on_click=_go, args=(pos + 1,), key="nav_next", help="다음 문항")
+    st.caption("승인하거나 삭제하면 다음 문항으로 자동으로 넘어갑니다.")
     with st.expander("일괄 승인", icon=":material/done_all:"):
         cand = [x["key"] for x in view if x["status"] == "auto_pass"]
         st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 한꺼번에 승인합니다. 승인할 때 자동 검사를 다시 합니다.")
@@ -173,16 +176,8 @@ with left:
             st.session_state["review_flash"] = f"승인 {len(r['approved'])} · 차단 {len(r['blocked'])}"
             st.rerun()
 
-# ================= 오른쪽: 읽기 화면 =================
-with right:
-    # --- 이동 ---
-    n1, n2, n3 = st.columns([1, 2, 1], vertical_alignment="center")
-    n1.button("이전", icon=":material/chevron_left:", width="stretch", disabled=pos == 0,
-              on_click=_go, args=(pos - 1,), key="nav_prev")
-    n2.markdown(f"<div style='text-align:center'>{pos + 1} / {len(keys)}</div>", unsafe_allow_html=True)
-    n3.button("다음", icon=":material/chevron_right:", width="stretch", disabled=pos == len(keys) - 1,
-              on_click=_go, args=(pos + 1,), key="nav_next")
-
+# ================= 가운데: 문항 · 보기별 근거 · 승인 =================
+with mid:
     # --- 머리말 ---
     st.markdown(f"### {saved['key']} {ui.status_badge(saved['status'])}")
     kind = ui.TYPE_KO[saved["type"]] + (" 조합형" if saved.get("statements") else "")
@@ -193,6 +188,9 @@ with right:
     st.caption(f"{saved.get('chasi')}차시 · {kind} · 난이도 {diff_txt} · 원고 p.{_pages_of(saved)} · "
                f"근거 {saved.get('evidence_level') or '없음'} · 시도 {saved['validation'].get('attempts')} · "
                f"생성 {saved['gen'].get('provider')}")
+    if popout:
+        st.link_button("원고 근거 새 창 열기", "evidence", icon=":material/open_in_new:",
+                       help="새 창(브라우저 탭)을 다른 모니터로 옮겨 두면, 여기서 문항을 바꿀 때마다 1~2초 안에 따라 바뀝니다.")
 
     # --- 최종 선정(출력 화면의 자동 선정 결과) — 사람이 바꿀 수 있다 ---
     if any(it.get("selected") for it in items):
@@ -203,22 +201,6 @@ with right:
             _it["selected"] = _sel
             p.save_item(_it, "final_select_manual", {"selected": _sel})
             st.rerun()
-
-    # --- 담당자 판정 난이도 — AI 판정보다 우선, 쌓이면 난이도 보정이 담당자 기준으로 맞춰진다 ---
-    _hd = (saved.get("human_difficulty") or {}).get("level")
-    _ai = (saved["validation"].get("G5") or {}).get("assessed_difficulty") or "판정 없음"
-    h1, h2 = st.columns([3.2, 2.8], vertical_alignment="center")
-    _pick = h1.segmented_control("담당자 판정 난이도", ["하", "중", "상", "최상"], default=_hd,
-                                 key=f"hd_{saved['key']}_{_hd}",
-                                 help="이 문항의 난이도를 직접 정합니다. 다시 누르면 지워지고 AI 판정으로 돌아갑니다. "
-                                      "문항 내용은 바뀌지 않으므로 승인은 그대로 유지됩니다.")
-    h2.caption(f"AI 판정 **{_ai}** · 출제 목표 **{saved.get('difficulty_target') or saved['slot']['difficulty']}**"
-               + (f" · 담당자 판정 **{_hd}** ({saved['human_difficulty'].get('by') or '이름 없음'})" if _hd else "")
-               + "  \n기준은 관리 → 난이도 기준에서 봅니다.")
-    if _pick != _hd:
-        review_ops.set_human_difficulty(p, saved["key"], _pick, who)
-        st.session_state["review_flash"] = f"{saved['key']} 담당자 판정 난이도: {_pick or '지움(AI 판정)'}"
-        st.rerun()
 
     # --- 원고 변경 표시 ---
     ms = saved["validation"].get("ms_change")
@@ -236,7 +218,40 @@ with right:
                 MU.start_revise(p, llm_settings.load(), [saved["key"]])
                 st.switch_page("app_pages/progress.py")
 
-    # --- 승인·삭제 (항상 보이게) ---
+    for f in saved["validation"].get("fails", []):
+        st.error(f, icon=":material/block:")
+    warns = saved["validation"].get("warnings", [])
+    if warns:
+        with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=False):
+            for w in warns:
+                st.markdown(f"- {w}")
+
+    # --- 문항 읽기: 보기(진술·정답)마다 근거 인용문을 바로 아래에 (상자 안 스크롤 없음) ---
+    with st.container(border=True):
+        st.markdown(question_html(saved), unsafe_allow_html=True)
+        st.markdown("**해설**")
+        st.markdown(saved.get("explanation", ""))
+        _orphan = [e for e in saved.get("evidence") or [] if e.get("quote") and str(e.get("target")) not in quote_targets(saved)]
+        if _orphan:  # 어느 보기에도 붙지 않는 인용문(대상 표기가 다른 경우) — 빠뜨리지 않게 따로 보여 준다
+            st.markdown("**그 밖의 근거 인용문**")
+            st.markdown("".join(quote_box(e) for e in _orphan), unsafe_allow_html=True)
+
+    # --- 담당자 판정 난이도 — AI 판정보다 우선, 쌓이면 난이도 보정이 담당자 기준으로 맞춰진다 ---
+    _hd = (saved.get("human_difficulty") or {}).get("level")
+    _ai = (saved["validation"].get("G5") or {}).get("assessed_difficulty") or "판정 없음"
+    _hpick = st.segmented_control("담당자 판정 난이도", ["하", "중", "상", "최상"], default=_hd,
+                                  key=f"hd_{saved['key']}_{_hd}",
+                                  help="이 문항의 난이도를 직접 정합니다. 다시 누르면 지워지고 AI 판정으로 돌아갑니다. "
+                                       "문항 내용은 바뀌지 않으므로 승인은 그대로 유지됩니다.")
+    st.caption(f"AI 판정 **{_ai}** · 출제 목표 **{saved.get('difficulty_target') or saved['slot']['difficulty']}**"
+               + (f" · 담당자 판정 **{_hd}** ({saved['human_difficulty'].get('by') or '이름 없음'})" if _hd else "")
+               + " · 기준은 관리 → 난이도 기준에서 봅니다.")
+    if _hpick != _hd:
+        review_ops.set_human_difficulty(p, saved["key"], _hpick, who)
+        st.session_state["review_flash"] = f"{saved['key']} 담당자 판정 난이도: {_hpick or '지움(AI 판정)'}"
+        st.rerun()
+
+    # --- 승인·삭제 ---
     with st.container(border=True):
         reasons = integrity.block_reasons(saved)
         need_conf = integrity.needs_evidence_confirm(saved)
@@ -245,7 +260,7 @@ with right:
             st.caption(":material/info: 승인하려면 맨 위 **검수자 이름**을 넣으세요.")
         confirm = False
         if need_conf:
-            confirm = st.checkbox("근거가 원고와 부분 일치(L1)합니다 — '원고 근거' 탭에서 하이라이트를 직접 확인했습니다",
+            confirm = st.checkbox("근거가 원고와 부분 일치(L1)합니다 — 원고 근거의 하이라이트를 직접 확인했습니다",
                                   key=f"conf_{saved['key']}")
         if a2.button("승인", type="primary", icon=":material/check:", width="stretch",
                      disabled=not who or saved["status"] in ("deleted", "approved")):
@@ -273,119 +288,56 @@ with right:
         if reasons and saved["status"] != "deleted":
             st.caption(":material/info: 승인 전 해결할 것 — " + " / ".join(reasons))
 
-    for f in saved["validation"].get("fails", []):
-        st.error(f, icon=":material/block:")
-    warns = saved["validation"].get("warnings", [])
-    if warns:
-        with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=False):
-            for w in warns:
-                st.markdown(f"- {w}")
-
-    tab_q, tab_src, tab_check, tab_hist = st.tabs([":material/article: 문항", ":material/menu_book: 원고 근거",
-                                                   ":material/rule: 검증 상세", ":material/history: 이력"])
-
-    # --- 문항 읽기 (시험지 형태) ---
-    with tab_q, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
-        with st.container(border=True):
-            st.markdown(f"<div style='font-size:1.15em;font-weight:600;line-height:1.6;white-space:pre-wrap'>"
-                        f"{html.escape(saved.get('stem', ''))}</div>", unsafe_allow_html=True)
-            lines = [f"**{s['label']}.** {s['text']}" for s in saved.get("statements") or []]
-            if saved["type"] == "mcq":
-                for i, ch in enumerate(saved.get("choices") or []):
-                    is_ans = str(i + 1) == str(saved["answer"])
-                    mark = " :green-badge[:material/check: 정답]" if is_ans else ""
-                    lines.append(f"{CIRCLED[i]} {'**' + ch['text'] + '**' if is_ans else ch['text']}{mark}")
-            if lines:  # 한 블록으로 묶어 줄 간격을 좁힌다
-                st.markdown("  \n".join(lines))
-            elif saved["type"] == "ox":
-                st.markdown(f"정답 :green-badge[{saved['answer']}]")
-            else:
-                alt = f" · 유사답변: {', '.join(saved['short_variants'])}" if saved.get("short_variants") else ""
-                st.markdown(f"정답 :green-badge[{saved['answer']}]{alt}")
-        st.markdown("**해설**")
-        st.markdown(saved.get("explanation", ""))
-        with st.expander("근거 인용문", icon=":material/format_quote:"):
-            for e in saved.get("evidence") or []:
-                if not e.get("quote"):
-                    continue
-                m = e.get("match")
-                where = f"p.{m['label']} · {m['level']}" if m else ":red[원고에서 못 찾음]"
-                kind_e = ":orange[함정 원문]" if not e.get("is_true") else "참 진술 근거"
-                st.markdown(f"- **[{e.get('target')}]** {kind_e} · {where}  \n  “{e['quote']}”"
-                            + (f"  \n  :gray[{e['trap_note']}]" if e.get("trap_note") and not e.get("is_true") else ""))
-
-        # --- 수정 (펼쳐서) ---
-        with st.expander("문항 수정", icon=":material/edit:"):
-            it["stem"] = st.text_area("발문", it.get("stem", ""), height=90)
-            if it.get("statements"):
-                sdf = st.data_editor(pd.DataFrame(it["statements"]), hide_index=True, width="stretch",
-                                     disabled=["label"], key=f"st_{it['key']}")
-                it["statements"] = sdf.to_dict("records")
-                st.caption("진술의 참/거짓을 바꾸면 보기 조합이 다시 만들어진다.")
-            elif it["type"] == "mcq":
-                cdf = st.data_editor(pd.DataFrame([{"번호": i + 1, "보기": ch["text"], "참": ch["is_true"]}
-                                                   for i, ch in enumerate(it["choices"])]),
-                                     hide_index=True, width="stretch", disabled=["번호"], key=f"ch_{it['key']}")
-                it["choices"] = [{"text": r["보기"], "is_true": bool(r["참"])} for _, r in cdf.iterrows()]
-            c1, c2 = st.columns(2)
-            if it["type"] == "ox":
-                it["answer"] = c1.radio("정답", ["O", "X"], index=0 if it["answer"] == "O" else 1, horizontal=True)
-            elif it["type"] == "mcq":
-                it["answer"] = c1.selectbox("정답", ["1", "2", "3", "4"], index=["1", "2", "3", "4"].index(str(it["answer"])))
-            else:
-                it["answer"] = c1.text_input("정답", it["answer"])
-                v = c2.text_input("유사답변({^} 구분)", "{^}".join(it.get("short_variants") or []))
-                it["short_variants"] = [x.strip() for x in v.split("{^}") if x.strip()]
-            it["explanation"] = st.text_area("해설", it.get("explanation", ""), height=90)
-            st.markdown("**근거 인용문** (원고 문장을 그대로 — 저장 시 원고에서 다시 찾는다)")
-            edf = st.data_editor(pd.DataFrame([{"대상": e.get("target"), "인용문": e.get("quote", ""), "쪽": e.get("page_label", ""),
-                                                "참 진술": bool(e.get("is_true")), "함정 메모": e.get("trap_note", ""),
-                                                "찾음": (f"p.{e['match']['label']} {e['match']['level']}" if e.get("match") else "✗")}
-                                               for e in it.get("evidence") or []]),
-                                 hide_index=True, width="stretch", num_rows="dynamic", disabled=["찾음"],
-                                 key=f"ev_{it['key']}")
-            it["evidence"] = [{"target": _s(r["대상"]), "quote": _s(r["인용문"]), "page_label": _s(r["쪽"]),
-                               "is_true": bool(r["참 진술"]) if not pd.isna(r["참 진술"]) else False,
-                               "trap_note": _s(r["함정 메모"])}
-                              for _, r in edf.iterrows() if _s(r["대상"])]
-            note = st.text_input("수정 메모(선택)")
-            if st.button("수정 저장", icon=":material/save:"):
-                if it.get("statements"):
-                    correct = [s["label"] for s in it["statements"] if s.get("is_true")]
-                    sets = choice_builder.build(correct, int(it["answer"]))
-                    it["choices"] = [{"text": choice_builder.fmt(x), "labels": x,
-                                      "is_true": x == sorted(correct, key="ㄱㄴㄷㄹ".index)} for x in sets]
-                    it["slot"]["combo_true"] = len(correct)
-                it["slot"]["answer"] = str(it["answer"])
-                r = review_ops.save_edit(p, it, note)
-                st.session_state["review_flash"] = ("저장했습니다 · " + ("자동 검사 탈락: " + "; ".join(r["validation"]["fails"])
-                                                                if r["validation"]["fails"] else "승인 전에 'AI 재검증'을 누르세요"))
-                st.rerun()
-
-    # --- 원고 근거 ---
-    with tab_src, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
-        # 미리보기는 저장된 문항(근거 매칭 결과 포함) 기준 — 편집 중 내용은 저장하면 다시 매칭된다 (Codex C8)
-        gs = saved.get("source_pages") or ([saved["page"]] if saved.get("page") is not None else [])
-        if not gs:
-            st.warning("원고에서 확인된 근거 위치가 없다(근거 미매칭 또는 원고 삭제).", icon=":material/link_off:")
+    # --- 수정 (펼쳐서) ---
+    with st.expander("문항 수정", icon=":material/edit:"):
+        it["stem"] = st.text_area("발문", it.get("stem", ""), height=90)
+        if it.get("statements"):
+            sdf = st.data_editor(pd.DataFrame(it["statements"]), hide_index=True, width="stretch",
+                                 disabled=["label"], key=f"st_{it['key']}")
+            it["statements"] = sdf.to_dict("records")
+            st.caption("진술의 참/거짓을 바꾸면 보기 조합이 다시 만들어진다.")
+        elif it["type"] == "mcq":
+            cdf = st.data_editor(pd.DataFrame([{"번호": i + 1, "보기": ch["text"], "참": ch["is_true"]}
+                                               for i, ch in enumerate(it["choices"])]),
+                                 hide_index=True, width="stretch", disabled=["번호"], key=f"ch_{it['key']}")
+            it["choices"] = [{"text": r["보기"], "is_true": bool(r["참"])} for _, r in cdf.iterrows()]
+        c1, c2 = st.columns(2)
+        if it["type"] == "ox":
+            it["answer"] = c1.radio("정답", ["O", "X"], index=0 if it["answer"] == "O" else 1, horizontal=True)
+        elif it["type"] == "mcq":
+            it["answer"] = c1.selectbox("정답", ["1", "2", "3", "4"], index=["1", "2", "3", "4"].index(str(it["answer"])))
         else:
-            c1, c2 = st.columns([3, 2], vertical_alignment="center")
-            c1.markdown(f"원고 p.{_pages_of(saved)} &nbsp; "
-                        f"{_chip('#f5c400', '참 진술 근거')} {_chip('#2f6fe0', '함정이 바꾼 원문')}",
-                        unsafe_allow_html=True)
-            viewer = c2.toggle("PDF 뷰어(근거로 자동 이동)", value=pdf_viewer is not None, disabled=pdf_viewer is None,
-                               help="끄면 페이지 이미지로 본다. 뷰어 표시가 이상하면 끄세요.")
-            if viewer:
-                pdf, anns, _ = item_viewer_payload(p, saved)
-                pdf_viewer(pdf, annotations=anns, scroll_to_annotation=1 if anns else None, render_text=True,
-                           annotation_outline_size=3, height=BODY_H - 70,
-                           key=f"pdf_{saved['key']}_{saved.get('updated', '')}")
-            else:
-                for g in gs:
-                    st.image(render_item_page(p, saved, g), caption=f"원고 p.{pages[g]['label']}", width="stretch")
+            it["answer"] = c1.text_input("정답", it["answer"])
+            v = c2.text_input("유사답변({^} 구분)", "{^}".join(it.get("short_variants") or []))
+            it["short_variants"] = [x.strip() for x in v.split("{^}") if x.strip()]
+        it["explanation"] = st.text_area("해설", it.get("explanation", ""), height=90)
+        st.markdown("**근거 인용문** (원고 문장을 그대로 — 저장 시 원고에서 다시 찾는다)")
+        edf = st.data_editor(pd.DataFrame([{"대상": e.get("target"), "인용문": e.get("quote", ""), "쪽": e.get("page_label", ""),
+                                            "참 진술": bool(e.get("is_true")), "함정 메모": e.get("trap_note", ""),
+                                            "찾음": (f"p.{e['match']['label']} {e['match']['level']}" if e.get("match") else "✗")}
+                                           for e in it.get("evidence") or []]),
+                             hide_index=True, width="stretch", num_rows="dynamic", disabled=["찾음"],
+                             key=f"ev_{it['key']}")
+        it["evidence"] = [{"target": _s(r["대상"]), "quote": _s(r["인용문"]), "page_label": _s(r["쪽"]),
+                           "is_true": bool(r["참 진술"]) if not pd.isna(r["참 진술"]) else False,
+                           "trap_note": _s(r["함정 메모"])}
+                          for _, r in edf.iterrows() if _s(r["대상"])]
+        note = st.text_input("수정 메모(선택)")
+        if st.button("수정 저장", icon=":material/save:"):
+            if it.get("statements"):
+                correct = [s["label"] for s in it["statements"] if s.get("is_true")]
+                sets = choice_builder.build(correct, int(it["answer"]))
+                it["choices"] = [{"text": choice_builder.fmt(x), "labels": x,
+                                  "is_true": x == sorted(correct, key="ㄱㄴㄷㄹ".index)} for x in sets]
+                it["slot"]["combo_true"] = len(correct)
+            it["slot"]["answer"] = str(it["answer"])
+            r = review_ops.save_edit(p, it, note)
+            st.session_state["review_flash"] = ("저장했습니다 · " + ("자동 검사 탈락: " + "; ".join(r["validation"]["fails"])
+                                                            if r["validation"]["fails"] else "승인 전에 'AI 재검증'을 누르세요"))
+            st.rerun()
 
     # --- 검증 상세 ---
-    with tab_check, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
+    with st.expander("검증 상세", icon=":material/rule:"):
         g4 = saved["validation"].get("G4")
         if g4:
             st.markdown(f"**AI 독립 풀이(G4)** — 정답을 숨기고 다시 푼 답 `{g4.get('answer')}` (출제 정답 `{saved['answer']}`) · "
@@ -406,7 +358,12 @@ with right:
         st.markdown(f"**난이도 근거**: {saved.get('difficulty_basis', '')}  \n**판단 포인트**: {saved.get('key_point', '')}")
 
     # --- 이력 ---
-    with tab_hist, st.container(height=BODY_H, border=False):  # 탭 안에서만 스크롤
+    with st.expander("이력", icon=":material/history:"):
         ev = p.events(key=saved["key"], limit=50)
         st.dataframe(pd.DataFrame([{"시각": e["ts"], "작업": e["kind"], "내용": str(e["detail"])[:200]} for e in ev]),
                      hide_index=True, width="stretch")
+
+# ================= 오른쪽: 원고 근거 (스크롤해도 화면에 붙어 있음) =================
+if right is not None:
+    with right:
+        evidence_panel(p, saved, key_prefix="rv", sticky=True, viewer_height=600)

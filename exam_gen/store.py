@@ -294,6 +294,35 @@ class Project:
         self.save_meta(meta)
         return self.rebuild_manuscript()
 
+    def move_source(self, sid: str, step: int) -> bool:
+        """원고 순서 바꾸기(위로 -1, 아래로 +1). 원고 PDF를 새 순서로 다시 이어 붙이고, 문항의 페이지·근거 위치는
+        (원고, 원고 안 페이지) 기준으로 그대로 따라간다. 차시 번호는 새 파일 순서대로 다시 매긴다(담당자 피드백 2026-11-05)."""
+        meta = self.meta
+        ids = [s["id"] for s in meta["sources"]]
+        if sid not in ids:
+            return False
+        i = ids.index(sid)
+        j = i + step
+        if not 0 <= j < len(ids):
+            return False
+        meta["sources"][i], meta["sources"][j] = meta["sources"][j], meta["sources"][i]
+        self.save_meta(meta)
+        self.rebuild_manuscript()
+        # 차시: 파일 순서대로, 각 파일 안에서는 원래 차시 구분을 유지하며 1, 2, 3…으로 다시 매긴다
+        pages = self.pages
+        remap, n = {}, 0
+        for p in pages:
+            k = (p["src"], p["chasi"])
+            if k not in remap:
+                n += 1
+                remap[k] = n
+        for p in pages:
+            p["chasi"] = remap[(p["src"], p["chasi"])]
+        self.save_pages(pages)
+        from .ingest.chasi_detect import sync_item_chasi
+        sync_item_chasi(self)
+        return True
+
     def items_using_source(self, sid: str) -> int:
         gs = {p["g"] for p in self.pages if p["src"] == sid}
         n = 0

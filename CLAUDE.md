@@ -20,12 +20,13 @@
 
 ## 다음 할 일 (2026-11-04 이후) — `docs/TODO.md` 2-10절
 1. 11-04: 절전 막기·토큰 기록·LiteLLM 모델 목록·소개서/사용 매뉴얼(HTML·Word·PDF, `tools/build_docs.py`)·휴대용 패키지 재빌드 완료(`docs/worklog/2026-11-04.md`). 부서장 메일(Claude Max 구독 요청 포함)은 사용자가 발송.
-2. 11-09 주 실사용 피드백 반영(프로그램 변경 시 패키지 '프로그램만' ZIP으로 배포).
-3. 난이도 기준표는 담당부서 확인 후 반영(사용자: 아직 반영하지 않음). 그다음 **300문항 파이널 테스트**(약 3시간 15분) — 사용자 승인 후.
-4. [알림] 섞어 쓰기 교차 검증 테스트(출제 Claude + G4·G5 Codex), 사내 LiteLLM 시험(주소·키 받은 뒤 '모델 목록 불러오기', 보안 정책 확인).
+2. 11-05: 대시보드 Claude 계정 확인·전환(`exam_gen/claude_account.py`), 패키지 20261105. 담당자 PC 설치 시 팀 계정으로 로그인·요금제 확인.
+3. 11-09 주 실사용 피드백 반영(프로그램 변경 시 패키지 '프로그램만' ZIP으로 배포).
+4. 난이도 기준표는 담당부서 확인 후 반영(사용자: 아직 반영하지 않음). 그다음 **300문항 파이널 테스트**(약 3시간 15분) — 사용자 승인 후.
+5. [알림] 섞어 쓰기 교차 검증 테스트(출제 Claude + G4·G5 Codex), 사내 LiteLLM 시험(주소·키 받은 뒤 '모델 목록 불러오기', 보안 정책 확인).
 
 ## 개발 메모
-- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 90개, `pytest.ini`로 tests/만 탐색).
+- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 91개, `pytest.ini`로 tests/만 탐색).
 - CLI: `python -m exam_gen.cli new|run|export|report|pool <프로젝트>` (`run --provider claude_agent_sdk|codex_cli`).
 - 출력 콘솔이 cp949라 한글이 깨지면 `PYTHONIOENCODING=utf-8`.
 - 프롬프트를 바꾸면 `exam_gen/config.py`의 `PROMPT_VERSION`을 올린다.

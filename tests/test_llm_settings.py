@@ -134,3 +134,21 @@ def test_list_litellm_models(monkeypatch):
     import pytest
     with pytest.raises(LLMError):
         list_openai_models("  ")
+
+
+def test_claude_account_status_and_login_script(monkeypatch, tmp_path):
+    """Claude 계정: auth status JSON 해석(요금제 한글), 로그인 창 배치 내용(로그아웃 → 구독 로그인). 실제 로그아웃·로그인은 하지 않는다."""
+    import subprocess
+    from pathlib import Path
+    from exam_gen import claude_account as CA
+    out = '{"loggedIn": true, "email": "a@b.co", "subscriptionType": "max", "orgName": "팀", "authMethod": "claude.ai"}'
+    assert CA.parse_status(out) == {"logged_in": True, "email": "a@b.co", "plan": "Max", "org": "팀", "method": "claude.ai"}
+    assert CA.parse_status('{"loggedIn": false}')["logged_in"] is False
+    assert CA.parse_status("not json")["logged_in"] is False
+    calls = []
+    monkeypatch.setattr(CA, "claude_exe", lambda: Path("C:/x/claude.exe"))
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: calls.append(args) or subprocess.CompletedProcess(args, 0, out, ""))
+    assert CA.status()["plan"] == "Max" and calls[-1][1:] == ["auth", "status", "--json"]
+    assert CA.logout() and calls[-1][1:] == ["auth", "logout"]
+    script = CA.login_script(Path("C:/x/claude.exe"))
+    assert script.index("auth logout") < script.index("auth login --claudeai") and "chcp 65001" in script

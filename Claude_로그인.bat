@@ -19,8 +19,10 @@ if "%CLAUDE%"=="" (
 )
 
 echo.
+echo  (대시보드 사이드바 AI 설정의 [다른 계정으로 로그인]으로도 할 수 있습니다.)
+echo.
 echo  잠시 뒤 Claude 화면이 열립니다.
-echo   1. 화면에서  /login  을 입력하고 Enter
+echo   1. 화면에서  /login  을 입력하고 Enter (다른 계정으로 바꿀 때는 먼저 /logout)
 echo   2. 브라우저가 열리면 회사 Claude 계정으로 로그인하고 승인
 echo   3. 로그인되었다는 메시지가 나오면  /exit  를 입력해 닫기
 echo.

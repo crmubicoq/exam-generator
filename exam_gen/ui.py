@@ -282,9 +282,12 @@ def settings_box():
                     st.error(f"모델 목록을 불러오지 못했습니다: {e}")
             if m := st.session_state.pop("litellm_msg", None):
                 st.success(m[1])
+        if "claude_agent_sdk" in used:
+            claude_account_box()
         if used & set(llm_settings.OAUTH_PROVIDERS):
-            st.caption("구독 로그인 방식은 이 PC에 로그인한 계정을 씁니다. Claude는 'Claude_로그인.bat', "
-                       "Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. 이 도구는 로그인 정보를 저장하지 않습니다.")
+            st.caption("구독 로그인 방식은 이 PC에 로그인한 계정을 씁니다(윈도우 사용자마다 따로). "
+                       + ("Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. " if "codex_cli" in used else "")
+                       + "이 도구는 로그인 정보를 저장하지 않습니다.")
         st.markdown("**출제 속도 설정**")
         st.caption("문항 내용·품질에는 영향이 없습니다. 보통은 기본값(8 · 3) 그대로 둡니다.")
         chunk = st.number_input("AI 한 번에 만드는 문항 수 (기본 8)", 1, 20, s.chunk_size)
@@ -326,6 +329,45 @@ def settings_box():
                         except Exception as e:  # noqa: BLE001
                             good, msg = False, str(e)
                 (st.success if good else st.error)(f"{P[prov].split(' (')[0]}: {msg}")
+
+
+def claude_account_box():
+    """Claude 구독 계정: 지금 로그인한 계정·요금제 표시, 로그아웃, 다른 계정으로 로그인(사용자 요청 2026-11-05).
+    계정 확인은 Claude 프로그램을 한 번 실행하므로(1~2초) 세션마다 한 번만 하고, 버튼을 누를 때 다시 확인한다."""
+    from . import claude_account as CA
+    ss = st.session_state
+    st.markdown("**Claude 계정**")
+    if "claude_acct" not in ss:
+        ss["claude_acct"] = CA.status()
+    a = ss["claude_acct"]
+    if a.get("logged_in"):
+        plan = f" · 요금제 **{a['plan']}**" if a.get("plan") else ""
+        org = f" · {a['org']}" if a.get("org") else ""
+        st.success(f"로그인 계정: **{a.get('email') or '(이메일 없음)'}**{plan}{org}", icon=":material/account_circle:")
+        if a.get("plan") in ("Pro", "무료"):
+            st.caption(":orange[이 요금제는 사용 한도가 작아 300문항 같은 큰 출제는 중간에 멈출 수 있습니다. 30~100문항씩 나눠 출제하세요.]")
+    else:
+        st.warning("Claude에 로그인되어 있지 않습니다. 아래 **다른 계정으로 로그인**을 눌러 로그인하세요."
+                   + (f" ({a['error'][:80]})" if a.get("error") else ""), icon=":material/no_accounts:")
+    st.caption("출제는 여기 보이는 계정의 구독 사용량을 씁니다. 다른 사람 계정으로 시험했다면 로그아웃한 뒤 이 PC를 쓸 사람의 계정으로 "
+               "로그인하세요. **다른 계정으로 로그인**을 누르면 새 창과 브라우저가 열리고, 브라우저에서 계정으로 승인하면 됩니다. "
+               "끝나면 **계정 다시 확인**을 누르세요.")
+    c1, c2 = st.columns(2)
+    if c1.button("다른 계정으로 로그인", icon=":material/login:", width="stretch", key="acct_login"):
+        if CA.open_login_window():
+            st.info("로그인 창을 열었습니다. 브라우저에서 승인한 뒤 **계정 다시 확인**을 누르세요.", icon=":material/open_in_new:")
+        else:
+            st.error("로그인 창을 열지 못했습니다. 프로그램 폴더의 'Claude_로그인.bat'을 실행하세요.")
+    if c2.button("계정 다시 확인", icon=":material/refresh:", width="stretch", key="acct_refresh"):
+        ss.pop("claude_acct", None)
+        st.rerun()
+    if a.get("logged_in"):
+        sure = st.checkbox("이 PC에서 지금 계정을 로그아웃합니다", key="acct_logout_ok")
+        if st.button("로그아웃", icon=":material/logout:", width="stretch", disabled=not sure, key="acct_logout"):
+            ok = CA.logout()
+            ss.pop("claude_acct", None)
+            st.toast("로그아웃했습니다." if ok else "로그아웃하지 못했습니다.", icon=":material/logout:")
+            st.rerun()
 
 
 def require_project(p: Project | None) -> Project:

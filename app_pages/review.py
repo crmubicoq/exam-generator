@@ -155,7 +155,7 @@ with left:
             label = (f"{_ICON.get(x['status'], '')} **{x['key']}** · {ui.TYPE_KO[x['type']][:2]}·{x['difficulty']}"
                      f" · p.{_pages_of(x)} · {_plain(x.get('stem', ''))[:40]}")
             st.button(label, key=f"pick_{x['key']}", type="primary" if cur else "tertiary", width="stretch",
-                      on_click=_pick, args=(x["key"],), help=x.get("stem", "")[:200])
+                      on_click=_pick, args=(x["key"],))
     # 이전·다음 문항 — 목록 쪽(50문항 단위)은 현재 문항을 따라 자동으로 넘어간다
     n1, n2, n3 = st.columns([1, 1.3, 1], vertical_alignment="center", gap="small")
     n1.button("", icon=":material/chevron_left:", width="stretch", disabled=pos == 0,

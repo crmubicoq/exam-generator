@@ -187,7 +187,8 @@ with mid:
     diff_txt = saved["difficulty"] + (f"(목표 {tgt})" if tgt and tgt != saved["difficulty"] else "")
     st.caption(f"{saved.get('chasi')}차시 · {kind} · 난이도 {diff_txt} · 원고 p.{_pages_of(saved)} · "
                f"근거 {saved.get('evidence_level') or '없음'} · 시도 {saved['validation'].get('attempts')} · "
-               f"생성 {saved['gen'].get('provider')}")
+               f"생성 {saved['gen'].get('provider')}"
+               + (f" · 프로그램 v{saved['gen']['app_version']}" if saved['gen'].get('app_version') else ""))
     if popout:
         st.link_button("원고 근거 새 창 열기", "evidence", icon=":material/open_in_new:",
                        help="새 창(브라우저 탭)을 다른 모니터로 옮겨 두면, 여기서 문항을 바꿀 때마다 1~2초 안에 따라 바뀝니다.")

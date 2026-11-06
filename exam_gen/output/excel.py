@@ -199,7 +199,8 @@ def _changed_cols(it: dict) -> list[int]:
 
 def _report(ws, project, items_all, final):
     bold = Font(bold=True)
-    rows = [["검증 리포트", project.meta["name"]], []]
+    from ..version import label as _vlabel
+    rows = [["검증 리포트", project.meta["name"]], ["출력 프로그램 버전", _vlabel()], []]
     st = Counter(it.get("status") for it in items_all)
     rows.append(["상태별 문항 수"])
     rows += [[STATUS_KO.get(k, k), v] for k, v in st.items()]

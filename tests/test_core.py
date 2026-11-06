@@ -327,3 +327,23 @@ def test_move_source_keeps_items_and_renumbers_chasi(tmp_path):
     assert after == before  # 같은 원고·같은 페이지를 그대로 가리킨다
     assert p.pages[0]["src"] == s2["id"] and p.pages[0]["chasi"] == 1 and p.pages[-1]["chasi"] == 2
     assert all(it["chasi"] == p.pages[it["page"]]["chasi"] == 2 for it in p.items())
+
+
+def test_version_and_update_backup(tmp_path, monkeypatch):
+    """프로그램 버전: 주.부.수 형식, 문항 기록에 버전이 남고, 버전이 바뀐 뒤 첫 실행에서 모든 프로젝트를 한 번만 자동 백업한다."""
+    import re
+    from exam_gen import backup, ui
+    from exam_gen import store as S
+    from exam_gen.version import APP_VERSION, label
+    assert re.fullmatch(r"\d+\.\d+\.\d+", APP_VERSION) and label().startswith(f"v{APP_VERSION}")
+    state = {"app_version": "0.9.9"}
+    monkeypatch.setattr(ui, "last_project", lambda: dict(state))
+    monkeypatch.setattr(ui, "set_pref", lambda **kw: state.update(kw))
+    monkeypatch.setattr(ui, "list_projects", lambda: ["a", "b"])
+    monkeypatch.setattr(ui, "Project", lambda slug: slug)
+    done = []
+    monkeypatch.setattr(backup, "backup", lambda p, reason: done.append((p, reason)) or tmp_path / "x.zip")
+    msg = ui.check_version_update()
+    assert [d[0] for d in done] == ["a", "b"] and "0.9.9" in done[0][1] and APP_VERSION in done[0][1]
+    assert state["app_version"] == APP_VERSION and "자동 백업" in msg
+    assert ui.check_version_update() is None and len(done) == 2  # 같은 버전이면 다시 백업하지 않는다

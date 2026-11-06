@@ -105,6 +105,10 @@ with left:
                 st.markdown(f"{'①②③④⑤'[i - 1]} {c['text']}")
             st.markdown(f"정답: {snap.get('answer')}")
 
+    _g = it.get("gen") or {}
+    st.caption(f"출제 정보: {_g.get('provider', '-')} · {_g.get('model') or '계정 기본 모델'} · 프롬프트 {_g.get('prompt_version', '-')}"
+               + f" · 프로그램 {('v' + _g['app_version']) if _g.get('app_version') else 'v1.0.0 이전'}"
+               + (f" · 난이도 기준 {_g['difficulty_policy']}" if _g.get('difficulty_policy') else ""))
     st.markdown("##### :material/verified: 자동 검증 기록")
     v = it.get("validation") or {}
     g4 = v.get("G4") or {}

@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .. import difficulty_policy, integrity
 from ..keep_awake import keep_awake
+from ..version import APP_VERSION
 from ..config import PROMPT_VERSION, criteria
 from ..llm.client import LLMClient, LLMError
 from ..llm.prompts import render
@@ -336,6 +337,7 @@ class Pipeline:
                     "reviewer_provider": self.s.provider_for("review"),
                     "reviewer": self.s.model_review or self.client.actual_model("review"),
                     "prompt_version": PROMPT_VERSION, "difficulty_policy": difficulty_policy.version(self.p),
+                    "app_version": APP_VERSION,
                     "manuscript": self.p.manuscript_hash(), "at": now()},
         }
         if s["type"] != "mcq":

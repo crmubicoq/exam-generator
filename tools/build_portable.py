@@ -5,8 +5,8 @@
     python tools/build_portable.py --app-only # 프로그램 파일만(업데이트용, 내장 Python 재사용)
 
 결과(dist/, git 제외)
-- 출제도구_휴대용_YYYYMMDD.zip   : 풀고 run.bat 실행. 인터넷 없이도 실행된다(AI 호출에는 인터넷 필요).
-- 출제도구_프로그램만_YYYYMMDD.zip: 이미 설치한 폴더에 덮어쓰기(python 폴더·projects·백업은 그대로).
+- 출제도구_v버전_휴대용.zip   : 풀고 run.bat 실행. 인터넷 없이도 실행된다(AI 호출에는 인터넷 필요).
+- 출제도구_v버전_프로그램만.zip: 이미 설치한 폴더에 덮어쓰기(python 폴더·projects·백업은 그대로).
 
 순서
 1. python.org의 Windows embeddable Python(이 PC와 같은 3.x.y)을 받는다(dist/_cache에 보관).
@@ -23,7 +23,6 @@ import subprocess
 import sys
 import urllib.request
 import zipfile
-from datetime import date
 from importlib import metadata
 from pathlib import Path
 
@@ -126,17 +125,19 @@ def main(argv=None):
         return
     if sys.platform != "win32":
         raise SystemExit("Windows에서 실행하세요.")
-    stamp = date.today().strftime("%Y%m%d")
+    sys.path.insert(0, str(ROOT))
+    from exam_gen.version import APP_VERSION  # 파일 이름에 프로그램 버전(날짜보다 덜 헷갈림)
+    stamp = f"v{APP_VERSION}"
     DIST.mkdir(exist_ok=True)
     stage = DIST / "출제도구"  # 풀었을 때 경로가 짧도록(윈도우 경로 길이 제한)
     shutil.rmtree(stage, ignore_errors=True)
     stage.mkdir(parents=True)
     _git_files(stage)
     if a.app_only:
-        _zip(stage, DIST / f"출제도구_프로그램만_{stamp}.zip")
+        _zip(stage, DIST / f"출제도구_{stamp}_프로그램만.zip")
     else:
         build_python(stage)
-        _zip(stage, DIST / f"출제도구_휴대용_{stamp}.zip")
+        _zip(stage, DIST / f"출제도구_{stamp}_휴대용.zip")
     print(f"풀어 둔 폴더(시험용): {stage}")
 
 

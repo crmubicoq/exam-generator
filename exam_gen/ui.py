@@ -9,7 +9,7 @@ import streamlit as st
 
 from .llm import settings as llm_settings
 from .llm.client import LLMClient, login_status
-from .store import Project, last_project, list_projects, set_last_project
+from .store import Project, last_project, list_projects, set_last_project, set_pref
 
 STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
 TYPE_KO = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
@@ -174,6 +174,7 @@ def render_sidebar():
                     st.error(str(e))
         _step_menu()
         settings_box()
+        _version_footer()
 
 
 # 단계 메뉴: (단계 키, 화면, 아이콘, 이름). 단계 키가 None이면 상태 표시 없음
@@ -329,6 +330,34 @@ def settings_box():
                         except Exception as e:  # noqa: BLE001
                             good, msg = False, str(e)
                 (st.success if good else st.error)(f"{P[prov].split(' (')[0]}: {msg}")
+
+
+def check_version_update() -> str | None:
+    """업데이트 뒤 처음 실행하면 모든 프로젝트를 자동 백업한다(문제가 생겨도 되돌릴 수 있게). 반환: 안내 문구 또는 None.
+    이전 실행 버전은 data/ui_state.json의 app_version에 남긴다. 처음 설치(기록 없음)이고 프로젝트가 없으면 기록만 한다."""
+    from . import backup
+    from .version import APP_VERSION
+    prev = last_project().get("app_version")
+    if prev == APP_VERSION:
+        return None
+    slugs = list_projects()
+    n = 0
+    for s in slugs:
+        if backup.backup(Project(s), f"업데이트 v{prev or '이전'}→v{APP_VERSION}"):
+            n += 1
+    set_pref(app_version=APP_VERSION)
+    if not slugs:
+        return None
+    return (f"새 버전 v{APP_VERSION}으로 업데이트되었습니다. 출제 데이터 {n}개 프로젝트를 자동 백업했습니다"
+            "(프로젝트 관리 → 백업에서 되돌릴 수 있습니다). 바뀐 점은 홈 화면에서 볼 수 있습니다.")
+
+
+def _version_footer():
+    from .version import label
+    msg = check_version_update()
+    if msg:
+        st.success(msg, icon=":material/system_update_alt:")
+    st.caption(f"평가문항 자동 출제 · 버전 **{label()}**  \n문의할 때 버전을 함께 알려 주세요.")
 
 
 def claude_account_box():

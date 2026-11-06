@@ -21,6 +21,7 @@ Codex_로그인.bat        # (선택) Codex 설치 확인(Node.js 필요 시 안
 - 경로가 길면(Windows 260자 제한) 패키지 설치가 실패한다. `D:\ExamGenerator`처럼 짧은 경로에 둔다.
 - 설치 점검만 다시 하려면 `.venv\Scripts\python.exe -m exam_gen.tools.check_env`(휴대용은 `python\python.exe -m …`) (`--login`을 붙이면 Claude 호출로 로그인까지 확인).
 - 문서: [프로그램 소개서(부서장용)](docs/평가문항_출제도구_소개서.html) · [사용 매뉴얼(설치~출력, 담당자용)](docs/평가문항_출제도구_사용매뉴얼.html) · [시연 자료](docs/담당부서_시연자료.html) · 작업 기록 `docs/worklog/` · 할 일 `docs/TODO.md`
+- **버전 관리**(2026-11-06, 실사용 시작 v1.0.0): `exam_gen/version.py`의 `APP_VERSION`(주.부.수 — 수: 버그·문구, 부: 기능·화면, 주: 데이터 구조·서버형). 사이드바 맨 아래·홈 '이번 버전에서 바뀐 점'(`docs/변경내역.md`)·문항 기록(`gen.app_version`)·검수·이의신청·엑셀 검증리포트에 표시. 업데이트 뒤 첫 실행에서 모든 프로젝트 자동 백업(`ui.check_version_update`, `data/ui_state.json`의 app_version). **배포 절차**: 버전·날짜 올리기 → 변경내역 → 커밋 → `git tag vX.Y.Z` → `python tools/build_portable.py [--app-only]` → `dist/출제도구_vX.Y.Z_휴대용.zip`·`_프로그램만.zip`. 프롬프트 버전(`PROMPT_VERSION`)·난이도 기준 버전은 따로 관리한다.
 - 배포 문서 만들기: `python tools/build_docs.py` → `dist/배포문서/`에 소개서·매뉴얼의 HTML·Word(.docx)·PDF(설치된 Word·Edge 사용)
 
 LLM은 사이드바 맨 아래 **AI 설정**에서 고른다. 생성, G4 독립 풀이, G5 검수마다 공급자를 다르게 지정할 수 있다.
@@ -113,7 +114,7 @@ CLI: `python -m exam_gen.cli new|run|export|report|pool` (exam_gen/cli.py 참고
 ```
 python -m pytest tests -q
 ```
-현재 92개. 샘플 원고 `input_17-43.pdf` 기준으로 다음을 검증한다: 쪽수 매핑, 배분(차시별), 분포, 근거 매칭, 환각 차단, 규칙, 조합형 보기(라벨 빈도 단서), G4 비교, G5 함정·단답 용어 판정, 중복, 원리 반복 점검, 시의성, 엑셀 양식, 모의 파이프라인, 근거PDF, 설정 보관.
+현재 93개. 샘플 원고 `input_17-43.pdf` 기준으로 다음을 검증한다: 쪽수 매핑, 배분(차시별), 분포, 근거 매칭, 환각 차단, 규칙, 조합형 보기(라벨 빈도 단서), G4 비교, G5 함정·단답 용어 판정, 중복, 원리 반복 점검, 시의성, 엑셀 양식, 모의 파이프라인, 근거PDF, 설정 보관.
 Codex 검수에서 나온 반례는 `tests/test_codex_regressions.py`에 회귀 테스트로 고정한다.
 
 ## 담당자와 정할 것

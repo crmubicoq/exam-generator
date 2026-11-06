@@ -63,6 +63,25 @@ with st.container(border=True):
         b.markdown(BADGE[state[k]] if k != "prior" or state[k] == DONE else ":gray-badge[선택]")
         c2.caption(f"{desc} · 끝나면: {done_when}")
 
+# ---------- 이번 버전에서 바뀐 점 ----------
+def _latest_changes() -> str:
+    from pathlib import Path
+    f = Path(__file__).resolve().parents[1] / "docs" / "변경내역.md"
+    try:
+        text = f.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    parts = text.split("\n## ")
+    return ("## " + parts[1]).strip() if len(parts) > 1 else ""
+
+
+from exam_gen.version import label as _vlabel  # noqa: E402
+_chg = _latest_changes()
+if _chg:
+    with st.expander(f"이번 버전에서 바뀐 점 — {_vlabel()}", icon=":material/new_releases:"):
+        st.markdown(_chg.split("\n", 1)[1] if "\n" in _chg else _chg)
+        st.caption("전체 변경 기록은 프로그램 폴더의 docs/변경내역.md에 있습니다.")
+
 # ---------- 처음 사용 안내 ----------
 with st.expander("처음 사용하시나요? — 사용 안내", icon=":material/help:", expanded=not p):
     t1, t2, t3 = st.tabs(["사용 순서", "용어 풀이", "자주 묻는 질문"])

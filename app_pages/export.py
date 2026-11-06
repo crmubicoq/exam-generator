@@ -36,6 +36,20 @@ if sum(_pc.values()) and str(p.dir) not in _seen:
     _seen.add(str(p.dir))
     _pending_dialog(_pc)
 
+# AI 검증을 미룬 문항(수정 후 재검증 생략 승인 · 빠른 출제)은 납품 전에 나중 검증하도록 늘 보이게 알린다
+_skipped = review_ops.skipped_items(p)
+if _skipped:
+    _ovr = sum(1 for it in _skipped if (it.get("validation") or {}).get("human_override"))
+    _parts = ([f"수정 후 AI 재검증 생략으로 승인 {_ovr}문항"] if _ovr else []) + \
+             ([f"빠른 출제 {len(_skipped) - _ovr}문항"] if len(_skipped) - _ovr else [])
+    with st.container(border=True):
+        c1, c2 = st.columns([4, 1], vertical_alignment="center")
+        c1.markdown(f":orange[:material/schedule:] **아직 AI 검증 전인 문항이 {len(_skipped)}개 있습니다** — " + " · ".join(_parts))
+        c1.caption("급할 때 먼저 처리한 문항입니다. 시간이 되면 품질 리포트의 **'생략한 AI 검증 실행'**으로 검증하세요"
+                   "(뒤에서 실행되며, 통과하면 승인이 유지됩니다). 납품 전에 검증하는 것을 권합니다.")
+        if c2.button("품질 리포트로", icon=":material/verified:", width="stretch"):
+            st.switch_page("app_pages/quality.py")
+
 # ---------- 최종 문항 자동 선정 ----------
 with st.expander("최종 문항 자동 선정 — 여유분까지 출제한 문항에서 목표 수만큼 고르기", icon=":material/checklist:",
                  expanded=False):

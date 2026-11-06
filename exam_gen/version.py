@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 RELEASE_DATE = "2026-11-06"
 
 

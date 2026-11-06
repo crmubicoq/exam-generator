@@ -307,7 +307,7 @@ with mid:
         if reasons and saved["status"] != "deleted":
             st.caption(":material/info: 승인 전 해결할 것 — " + " / ".join(reasons))
         # 급할 때: 사람이 고친 문항을 AI 재검증 없이 검수자 책임으로 승인(사이드바 AI 설정 → 검수 설정에서 켠 경우만)
-        if (last_project().get("allow_skip_reverify") and review_ops.can_skip_reverify(saved)
+        if (last_project().get("allow_skip_reverify", True) and review_ops.can_skip_reverify(saved)
                 and reasons == [integrity.AI_STALE]):
             with st.container(border=True):
                 st.markdown(":orange[:material/bolt:] **급할 때: AI 재검증 없이 승인**")

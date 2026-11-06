@@ -291,12 +291,13 @@ def settings_box():
                        + ("Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. " if "codex_cli" in used else "")
                        + "이 도구는 로그인 정보를 저장하지 않습니다.")
         st.markdown("**검수 설정**")
-        _skip = st.toggle("급할 때 '수정 후 AI 재검증 없이 승인' 허용", value=bool(last_project().get("allow_skip_reverify")),
-                          key="allow_skip_reverify_tg")
-        st.caption("켜면 검수 화면에서 사람이 고친 문항을 AI 재검증 없이 **검수자 책임으로** 승인할 수 있습니다. "
-                   "형식·원고 근거·규칙·중복 검사는 그대로 통과해야 하고, 승인한 문항은 'AI 검증 생략' 대기열에 남아 "
-                   "나중에 품질 리포트의 '생략한 AI 검증 실행'으로 검증할 수 있습니다. 평소에는 꺼 두세요.")
-        if _skip != bool(last_project().get("allow_skip_reverify")):
+        _skip_now = bool(last_project().get("allow_skip_reverify", True))
+        _skip = st.toggle("고친 문항에 'AI 재검증 없이 승인' 버튼 보이기", value=_skip_now, key="allow_skip_reverify_tg")
+        st.caption("급할 때 담당자가 고친 내용을 직접 확인하고 바로 승인할 수 있게 하는 버튼입니다(AI 재검증은 문항당 30초~1분). "
+                   "**켜도 자동으로 건너뛰는 문항은 없습니다** — 사람이 고친 문항에만 버튼이 나오고, 문항마다 확인 체크·검수자 이름을 "
+                   "넣어야 승인됩니다. 형식·원고 근거·규칙·중복 검사는 그대로 통과해야 합니다. 이렇게 승인한 문항은 "
+                   "'AI 검증 생략' 대기열에 남으니 납품 전에 품질 리포트의 '생략한 AI 검증 실행'으로 검증하세요.")
+        if _skip != _skip_now:
             set_pref(allow_skip_reverify=_skip)
         st.markdown("**출제 속도 설정**")
         st.caption("문항 내용·품질에는 영향이 없습니다. 보통은 기본값(8 · 3) 그대로 둡니다.")

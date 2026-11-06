@@ -72,6 +72,21 @@ pages = p.pages
 if st.session_state.get("review_flash"):  # 직전 승인·삭제 결과 알림(다시 그린 뒤에도 보이게)
     st.toast(st.session_state.pop("review_flash"), icon=":material/check_circle:")
 
+
+@st.dialog("검수 완료")
+def _review_done(n_ok: int, n_del: int):
+    st.markdown(f"### :material/task_alt: 모든 문항의 검수를 마쳤습니다\n승인 **{n_ok}**문항 · 삭제 **{n_del}**문항")
+    st.caption("출력 화면에서 출력 대상 **'승인한 문항만'**으로 납품용 엑셀과 근거PDF를 만드세요.")
+    if st.button("출력으로 이동", type="primary", icon=":material/download:", width="stretch"):
+        st.switch_page("app_pages/export.py")
+
+
+# 승인·삭제 뒤 남은 검수가 0이 되면 한 번 알린다(담당자 피드백 2026-11-06)
+if st.session_state.pop("review_check_done", False) and sum(review_ops.pending_counts(items).values()) == 0:
+    _cnt = Counter(it["status"] for it in items)
+    if _cnt.get("approved"):
+        _review_done(_cnt.get("approved", 0), _cnt.get("deleted", 0))
+
 # ---------- 검수 진행률 · 대기열 · 상세 필터 ----------
 cnt = Counter(it["status"] for it in items)
 active = len(items) - cnt.get("deleted", 0)
@@ -174,6 +189,7 @@ with left:
         if st.button("일괄 승인", disabled=not (cand and sure and st.session_state.get("who"))):
             r = review_ops.bulk_approve(p, cand, st.session_state["who"])
             st.session_state["review_flash"] = f"승인 {len(r['approved'])} · 차단 {len(r['blocked'])}"
+            st.session_state["review_check_done"] = True
             st.rerun()
 
 # ================= 가운데: 문항 · 보기별 근거 · 승인 =================
@@ -268,19 +284,21 @@ with mid:
             ok, fails = review_ops.approve(p, saved["key"], who, evidence_confirmed=confirm)
             if ok:  # 승인하면 다음 문항으로 넘어간다
                 st.session_state["review_flash"] = f"{saved['key']} 승인했습니다"
+                st.session_state["review_check_done"] = True
                 _leave_to_next()
                 st.rerun()
             else:  # 막힌 이유가 사라지지 않도록 다시 그리지 않는다
                 st.error("승인할 수 없습니다: " + " / ".join(fails), icon=":material/block:")
         if a3.button("AI 재검증", icon=":material/refresh:", width="stretch",
                      help="문항을 고친 뒤 AI 독립 풀이와 AI 검수를 다시 실행합니다(AI 호출 약 2회)"):
-            with st.spinner("AI 재검증 중…"):
+            with st.spinner("AI 재검증 중… 문항당 약 30초~1분 걸립니다(이 화면에서 기다려 주세요)"):
                 review_ops.rerun_llm_gates(p, llm_settings.load(), saved["key"])
             st.rerun()
         if saved["status"] != "deleted":
             if a4.button("삭제", icon=":material/delete:", width="stretch"):
                 review_ops.set_status(p, saved["key"], "deleted", "")
                 st.session_state["review_flash"] = f"{saved['key']} 삭제했습니다"
+                st.session_state["review_check_done"] = True
                 _leave_to_next()
                 st.rerun()
         elif a4.button("복원", icon=":material/restore:", width="stretch"):
@@ -288,6 +306,25 @@ with mid:
             st.rerun()
         if reasons and saved["status"] != "deleted":
             st.caption(":material/info: 승인 전 해결할 것 — " + " / ".join(reasons))
+        # 급할 때: 사람이 고친 문항을 AI 재검증 없이 검수자 책임으로 승인(사이드바 AI 설정 → 검수 설정에서 켠 경우만)
+        if (last_project().get("allow_skip_reverify") and review_ops.can_skip_reverify(saved)
+                and reasons == [integrity.AI_STALE]):
+            with st.container(border=True):
+                st.markdown(":orange[:material/bolt:] **급할 때: AI 재검증 없이 승인**")
+                st.caption("고친 내용이 정답 유일성·함정 모순을 깨지 않았는지 AI가 다시 확인하지 않습니다. 검수자가 직접 확인한 뒤 "
+                           "책임지고 승인하는 기능입니다. 이 문항은 'AI 검증 생략' 대기열에 남으니 나중에 꼭 검증하세요.")
+                ok_sure = st.checkbox("고친 내용을 직접 확인했고, AI 재검증 없이 책임지고 승인합니다",
+                                      key=f"skip_ok_{saved['key']}")
+                if st.button("AI 재검증 없이 승인", icon=":material/bolt:", disabled=not (who and ok_sure),
+                             key=f"skip_btn_{saved['key']}"):
+                    ok, fails = review_ops.approve_without_reverify(p, saved["key"], who, evidence_confirmed=confirm)
+                    if ok:
+                        st.session_state["review_flash"] = f"{saved['key']} 승인했습니다(AI 재검증 생략 — 나중에 검증 필요)"
+                        st.session_state["review_check_done"] = True
+                        _leave_to_next()
+                        st.rerun()
+                    else:
+                        st.error("승인할 수 없습니다: " + " / ".join(fails), icon=":material/block:")
 
     # --- 수정 (펼쳐서) ---
     with st.expander("문항 수정", icon=":material/edit:"):

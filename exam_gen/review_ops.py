@@ -28,6 +28,18 @@ def revalidate_code(project: Project, item: dict) -> tuple[list[str], list[str]]
     return fails + ef + rf + df, ew + rw + dw
 
 
+PENDING = ("manual", "warn", "auto_pass")  # 사람이 아직 승인·삭제하지 않은 문항
+
+
+def pending_counts(items: list[dict]) -> dict[str, int]:
+    """검수 남은 문항 수(상태별). 승인·삭제·기출은 빠진다."""
+    out = {s: 0 for s in PENDING}
+    for it in items:
+        if it.get("status") in out:
+            out[it["status"]] += 1
+    return out
+
+
 def save_edit(project: Project, item: dict, note: str = "") -> dict:
     """사람이 고친 내용을 저장. 코드 관문을 다시 돌리고, 내용이 바뀌었으면 G4·G5 재검증 전 상태로 둔다."""
     prev = project.item(item["key"])
@@ -72,6 +84,37 @@ def approve(project: Project, key: str, who: str = "", evidence_confirmed: bool 
     return True, []
 
 
+def can_skip_reverify(item: dict) -> bool:
+    """'AI 재검증 없이 승인'을 보여 줄 문항: 사람이 고쳐서 AI 검증이 무효가 된 문항만(빠른 출제 문항은 해당 없음)."""
+    v = item.get("validation") or {}
+    return bool(v.get("llm_stale")) and item.get("status") not in ("deleted", "approved")
+
+
+def approve_without_reverify(project: Project, key: str, who: str, evidence_confirmed: bool = False) -> tuple[bool, list[str]]:
+    """수정 후 AI 재검증을 건너뛰고 사람 책임으로 승인한다(급할 때만, 설정에서 켠 경우).
+    무료 검사(형식·근거 대조·규칙·중복)는 다시 돌려 통과해야 하고, 검수자 이름이 필요하다.
+    문항은 'AI 검증 생략' 대기열·품질 리포트에 남아 나중에 '생략한 AI 검증 실행'으로 한꺼번에 검증할 수 있다."""
+    if not who:
+        return False, ["검수자 이름이 필요합니다"]
+    item = project.item(key)
+    if not can_skip_reverify(item):
+        return False, ["사람이 고친 뒤 AI 재검증 전인 문항만 건너뛸 수 있습니다"]
+    fails, warns = revalidate_code(project, item)
+    item["validation"]["fails"] = fails
+    if fails:
+        item["status"] = "manual"
+        project.save_item(item, "approve_blocked", {"by": who, "reasons": fails, "override": True})
+        return False, fails
+    v = item["validation"]
+    v["human_override"] = {"hash": integrity.content_hash(item), "by": who, "at": now(), "reason": "수정 후 AI 재검증 생략"}
+    v["llm_skipped"] = True
+    note = f"수정 후 AI 재검증 생략 — 검수자 {who} 확인({now()[:10]}). 나중에 '생략한 AI 검증 실행'으로 검증하세요"
+    v["warnings"] = [w for w in v.get("warnings", []) if not w.startswith("수정 후 AI 재검증 생략")] + [note]
+    project.save_item(item, "human_override", {"by": who})
+    ok, reasons = approve(project, key, who, evidence_confirmed=evidence_confirmed)
+    return ok, reasons
+
+
 def bulk_approve(project: Project, keys: list[str], who: str = "") -> dict:
     """일괄 승인은 근거 확인 표시를 줄 수 없으므로 L1 문항은 자동으로 제외(차단)된다."""
     ok, blocked = [], {}
@@ -107,12 +150,17 @@ def estimate_verify(settings, n: int) -> int:
     return 2 * ((n + size - 1) // size)
 
 
-def verify_skipped(project: Project, settings, keys: list[str], progress=None) -> dict:
-    """빠른 출제로 생략한 G4·G5를 묶음 단위로 실행한다. 통과하면 일반 문항과 같아지고, 탈락하면 수동확인."""
+def verify_skipped(project: Project, settings, keys: list[str], progress=None, should_stop=None) -> dict:
+    """빠른 출제·'수정 후 AI 재검증 생략'으로 미룬 G4·G5를 묶음 단위로 실행한다. 통과하면 일반 문항과 같아지고(승인한 문항은
+    승인 당시 내용 그대로면 승인 유지), 탈락하면 수동확인. should_stop()이 참이면 지금 묶음까지만 하고 멈춘다."""
     client = LLMClient(settings)
     size = max(1, getattr(settings, "chunk_size", 8))
     ok = bad = 0
+    stopped = False
     for i in range(0, len(keys), size):
+        if should_stop and should_stop():
+            stopped = True
+            break
         items = [project.item(k) for k in keys[i:i + size]]
         items = [it for it in items if it]
         code = {it["key"]: revalidate_code(project, it) for it in items}
@@ -124,26 +172,55 @@ def verify_skipped(project: Project, settings, keys: list[str], progress=None) -
             v = it["validation"]
             v["G4"], v["G5"] = raw4, raw5
             v["fails"] = cf + f4 + f5
-            v["warnings"] = [w for w in cw + w4 + w5 if not w.startswith("AI 검증 생략")]
+            v["warnings"] = [w for w in cw + w4 + w5 if not w.startswith(("AI 검증 생략", "수정 후 AI 재검증 생략"))]
             v["llm_skipped"] = False
             v["llm_stale"] = False
+            was_approved = (it["status"] == "approved"
+                            and (it.get("approved") or {}).get("hash") == integrity.content_hash(it))
             if v["fails"]:
                 v.pop("verified", None)
                 if it["status"] != "deleted":
-                    it["status"] = "manual"
+                    it["status"] = "manual"  # 사람 책임으로 승인했던 문항도 AI 검증에서 탈락하면 승인이 풀린다
                 bad += 1
             else:
                 review_llm.relabel_difficulty(it)
                 review_llm.merge_variants(it)
                 integrity.mark_verified(it)
                 if it["status"] != "deleted":
-                    it["status"] = "warn" if v["warnings"] else "auto_pass"
+                    if was_approved and (it.get("approved") or {}).get("hash") == integrity.content_hash(it):
+                        it["status"] = "approved"  # 승인 당시 내용 그대로 통과 — 승인 유지
+                    else:
+                        it["status"] = "warn" if v["warnings"] else "auto_pass"
                 ok += 1
             project.save_item(it, "verify_skipped", {"fails": v["fails"][:5]})
         if progress:
             progress(min(i + size, len(keys)), len(keys))
-    project.log("verify_skipped", {"ok": ok, "manual": bad})
-    return {"ok": ok, "manual": bad}
+    project.log("verify_skipped", {"ok": ok, "manual": bad, "stopped": stopped})
+    return {"ok": ok, "manual": bad, "stopped": stopped}
+
+
+# ---------- 생략한 AI 검증을 뒤에서 실행(화면을 옮겨도 계속, 중지 가능 — 담당자 피드백 2026-11-06) ----------
+VERIFY_JOBS: dict[str, dict] = {}
+
+
+def start_verify_job(project: Project, settings, keys: list[str]) -> dict:
+    import threading
+    job = VERIFY_JOBS.get(project.slug)
+    if job and job["status"] == "running":
+        return job
+    job = {"status": "running", "done": 0, "total": len(keys), "ok": 0, "manual": 0, "stop": False, "error": ""}
+    VERIFY_JOBS[project.slug] = job
+
+    def run():
+        try:
+            r = verify_skipped(project, settings, keys,
+                               progress=lambda i, t: job.update(done=i),
+                               should_stop=lambda: job["stop"])
+            job.update(ok=r["ok"], manual=r["manual"], status="stopped" if r["stopped"] else "done")
+        except Exception as e:  # noqa: BLE001
+            job.update(status="error", error=str(e)[:300])
+    threading.Thread(target=run, daemon=True, name=f"verify_{project.slug}").start()
+    return job
 
 
 def rerun_llm_gates(project: Project, settings, key: str) -> dict:

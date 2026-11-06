@@ -4,7 +4,7 @@ from datetime import datetime
 
 import streamlit as st
 
-from exam_gen import ui
+from exam_gen import review_ops, ui
 from exam_gen import select_final
 from exam_gen.output import evidence_pdf, exam_paper, excel, export_log, numbering
 
@@ -14,6 +14,27 @@ items = p.items()
 c = Counter(it["status"] for it in items)
 # 결과 파일은 프로젝트별로 기억한다(다른 프로젝트로 바꿨을 때 이전 파일이 보이지 않게)
 res = st.session_state.setdefault("export_results", {}).setdefault(str(p.dir), {})
+
+
+@st.dialog("검수하지 않은 문항이 있습니다")
+def _pending_dialog(pc: dict):
+    total = sum(pc.values())
+    st.markdown(f"아직 승인·삭제하지 않은 문항이 **{total}개** 있습니다 — "
+                f"수동확인 {pc['manual']} · 경고 {pc['warn']} · 자동통과 {pc['auto_pass']}")
+    st.caption("납품용 출력(출력 대상 **'승인한 문항만'**)에는 이 문항들이 빠집니다. 검수를 마친 뒤 출력하는 것을 권합니다.")
+    c1, c2 = st.columns(2)
+    if c1.button("검수로 이동", type="primary", icon=":material/fact_check:", width="stretch"):
+        st.switch_page("app_pages/review.py")
+    if c2.button("그대로 출력 화면 보기", width="stretch"):
+        st.rerun()
+
+
+# 담당자 피드백 2026-11-06: 검수가 남아 있으면 출력 화면에 들어올 때 알린다(프로젝트마다 세션당 한 번)
+_pc = review_ops.pending_counts(items)
+_seen = st.session_state.setdefault("export_pending_seen", set())
+if sum(_pc.values()) and str(p.dir) not in _seen:
+    _seen.add(str(p.dir))
+    _pending_dialog(_pc)
 
 # ---------- 최종 문항 자동 선정 ----------
 with st.expander("최종 문항 자동 선정 — 여유분까지 출제한 문항에서 목표 수만큼 고르기", icon=":material/checklist:",

@@ -347,3 +347,48 @@ def test_version_and_update_backup(tmp_path, monkeypatch):
     assert [d[0] for d in done] == ["a", "b"] and "0.9.9" in done[0][1] and APP_VERSION in done[0][1]
     assert state["app_version"] == APP_VERSION and "자동 백업" in msg
     assert ui.check_version_update() is None and len(done) == 2  # 같은 버전이면 다시 백업하지 않는다
+
+
+def test_skip_reverify_override_flow(sample_project, tmp_path):
+    """수정 후 AI 재검증 생략(사람 책임 승인): 고치면 승인이 막히고, 건너뛰기 승인은 무료 검사를 통과해야 하며 출력에 들어간다.
+    다시 고치면 무효, 나중에 '생략한 AI 검증'을 통과하면 승인이 유지된다. 엑셀 Q열에 난이도가 보인다."""
+    import openpyxl
+    from exam_gen import integrity, review_ops
+    from exam_gen.generate.generator import start_batch
+    from exam_gen.llm.settings import LLMSettings
+    from exam_gen.output import excel, numbering
+    p = sample_project
+    opts = dict(criteria()["defaults"])
+    mock = LLMSettings(provider="mock", workers=1)
+    b = start_batch(p, mock, build_slots(p.pages, allocate(p.pages, 6), opts), opts, background=False)
+    it = next(x for x in p.items(batch=b) if x["status"] in ("auto_pass", "warn") and x["type"] == "mcq"
+              and not integrity.needs_evidence_confirm(x))
+    key = it["key"]
+    it["explanation"] = it.get("explanation", "") + " (검수자 보완)"
+    review_ops.save_edit(p, it, "해설 보완")
+    ok, why = review_ops.approve(p, key, "검수자")
+    assert not ok and integrity.AI_STALE in why                      # 고친 뒤에는 AI 재검증 전까지 승인 불가
+    assert not review_ops.approve_without_reverify(p, key, "")[0]    # 검수자 이름 필수
+    ok, why = review_ops.approve_without_reverify(p, key, "검수자")
+    assert ok, why
+    cur = p.item(key)
+    assert cur["status"] == "approved" and integrity.is_exportable(cur) and cur["validation"]["llm_skipped"]
+    assert any(w.startswith("수정 후 AI 재검증 생략") for w in cur["validation"]["warnings"])
+    assert key in [x["key"] for x in review_ops.skipped_items(p)]
+    assert key in [x["key"] for x in numbering.select(p.items(), scope="approved")]
+    # 엑셀: Q열 난이도
+    out = excel.write(p, p.items(), tmp_path / "q.xlsx", scope="approved")
+    ws = openpyxl.load_workbook(out["path"]).worksheets[0]
+    assert str(ws["Q2"].value).startswith("난이도") and ws["Q4"].value in ("최상", "상", "중", "하")
+    # 나중에 AI 검증 통과 → 승인 유지
+    r = review_ops.verify_skipped(p, mock, [key])
+    cur = p.item(key)
+    if r["ok"]:
+        assert cur["status"] == "approved" and integrity.is_verified(cur) and not cur["validation"]["llm_skipped"]
+    # 다시 고치면 사람 책임 승인도 무효
+    cur["explanation"] = cur.get("explanation", "") + " 다시 보완"
+    review_ops.save_edit(p, cur, "또 수정")
+    assert not integrity.is_exportable(p.item(key))
+    # 검수 남은 문항 수
+    pc = review_ops.pending_counts(p.items())
+    assert set(pc) == {"manual", "warn", "auto_pass"} and sum(pc.values()) >= 1

@@ -38,6 +38,17 @@ def is_verified(item: dict) -> bool:
             and set(rec.get("gates", [])) >= {"G1", "G2", "G3", "G4", "G5", "G6"})
 
 
+AI_STALE = "현재 내용에 대한 AI 검증(G4·G5) 기록이 없음 — 'AI 재검증'을 먼저 누르세요"
+
+
+def has_override(item: dict) -> bool:
+    """사람 책임 승인(수정 후 AI 재검증 생략, 담당자 피드백 2026-11-06): 지금 내용 그대로에 대해 검수자가 확인한 기록이 있고
+    무료 검사(G1·G2·G3·G6)를 통과한 상태. 내용을 다시 고치면 해시가 달라져 무효가 된다."""
+    v = item.get("validation") or {}
+    o = v.get("human_override") or {}
+    return bool(o) and o.get("hash") == content_hash(item) and not v.get("fails")
+
+
 def needs_evidence_confirm(item: dict) -> bool:
     return any((e.get("match") or {}).get("level") == "L1" for e in item.get("evidence") or [])
 
@@ -48,8 +59,8 @@ def block_reasons(item: dict) -> list[str]:
     v = item.get("validation") or {}
     if v.get("fails"):
         out += v["fails"]
-    if v.get("llm_stale") or (v.get("verified") or {}).get("hash") != content_hash(item):
-        out.append("현재 내용에 대한 AI 검증(G4·G5) 기록이 없음 — 'AI 재검증'을 먼저 누르세요")
+    if (v.get("llm_stale") or (v.get("verified") or {}).get("hash") != content_hash(item)) and not has_override(item):
+        out.append(AI_STALE)
     if not item.get("source_pages"):
         out.append("원고에서 확인된 근거가 없음")
     return out
@@ -57,11 +68,11 @@ def block_reasons(item: dict) -> list[str]:
 
 def is_exportable(item: dict) -> bool:
     appr = item.get("approved") or {}
-    return (item.get("status") == "approved" and is_verified(item) and bool(item.get("source_pages"))
+    return (item.get("status") == "approved" and (is_verified(item) or has_override(item)) and bool(item.get("source_pages"))
             and appr.get("hash") == content_hash(item)
             and (not needs_evidence_confirm(item) or appr.get("evidence_confirmed")))
 
 
 def is_draftable(item: dict) -> bool:
-    return (item.get("status") in ("approved", "auto_pass", "warn") and is_verified(item)
+    return (item.get("status") in ("approved", "auto_pass", "warn") and (is_verified(item) or has_override(item))
             and bool(item.get("source_pages")))

@@ -53,19 +53,45 @@ from exam_gen import review_ops as _ro  # noqa: E402
 from exam_gen.llm import settings as _ls  # noqa: E402
 
 _skipped = _ro.skipped_items(p)
-if _skipped:
+
+
+@st.fragment(run_every=2)
+def _verify_job_view():
+    """생략한 AI 검증을 뒤에서 실행 — 진행률·중지(담당자 피드백 2026-11-06). 다른 화면으로 옮겨도 계속된다."""
+    job = _ro.VERIFY_JOBS.get(p.slug)
+    if not job:
+        return
+    if job["status"] == "running":
+        c1, c2 = st.columns([5, 1], vertical_alignment="center")
+        c1.progress(job["done"] / (job["total"] or 1), text=f"AI 검증 중… {job['done']}/{job['total']}문항 "
+                                                           "(다른 화면을 봐도 계속됩니다)")
+        if c2.button("중지", icon=":material/stop_circle:", key="verify_stop", width="stretch",
+                     help="지금 검증 중인 묶음까지 마치고 멈춥니다. 남은 문항은 다시 실행하면 이어서 검증합니다."):
+            job["stop"] = True
+        if job["stop"]:
+            st.caption("중지 요청 — 지금 묶음을 마치면 멈춥니다.")
+    elif job["status"] in ("done", "stopped"):
+        (st.success if job["status"] == "done" else st.warning)(
+            f"AI 검증 {'완료' if job['status'] == 'done' else '중지'}: 통과 {job['ok']} · 탈락(수동확인) {job['manual']}"
+            + (" — 남은 문항은 다시 실행하면 이어서 검증합니다." if job["status"] == "stopped" else ""))
+    else:
+        st.error(f"AI 검증 중 오류: {job.get('error')}")
+
+
+if _skipped or _ro.VERIFY_JOBS.get(p.slug):
     _s = _ls.load()
     with st.container(border=True):
-        st.markdown(f"#### :orange[:material/bolt:] AI 검증을 생략한 문항 {len(_skipped)}개 (빠른 출제)")
-        st.caption("정답 오류·이의 제기·함정 모순을 아직 확인하지 않은 문항입니다. 이 문항들은 정답·이의 제기 등급에 반영되지 않았고, "
-                   "승인 전에 검증해야 합니다. 여러 문항을 묶어 검증하므로 문항마다 따로 하는 것보다 AI 호출이 적습니다.")
-        if st.button(f"생략한 AI 검증 실행 — 예상 AI 호출 약 {_ro.estimate_verify(_s, len(_skipped))}회",
-                     type="primary", icon=":material/verified:", key="verify_skipped"):
-            _bar = st.progress(0.0, text="검증 중…")
-            _r = _ro.verify_skipped(p, _s, [it["key"] for it in _skipped],
-                                    progress=lambda i, t: _bar.progress(i / t, text=f"검증 중… {i}/{t}"))
-            st.success(f"검증 완료: 통과 {_r['ok']} · 탈락(수동확인) {_r['manual']}")
-            st.rerun()
+        if _skipped:
+            st.markdown(f"#### :orange[:material/bolt:] AI 검증을 생략한 문항 {len(_skipped)}개 (빠른 출제·수정 후 재검증 생략)")
+            st.caption("정답 오류·이의 제기·함정 모순을 아직 확인하지 않은 문항입니다. 이 문항들은 정답·이의 제기 등급에 반영되지 않았습니다. "
+                       "여러 문항을 묶어 검증하므로 문항마다 따로 하는 것보다 AI 호출이 적습니다. 실행 중에는 **중지**할 수 있습니다.")
+        _job = _ro.VERIFY_JOBS.get(p.slug)
+        if _skipped and not (_job and _job["status"] == "running"):
+            if st.button(f"생략한 AI 검증 실행 — 예상 AI 호출 약 {_ro.estimate_verify(_s, len(_skipped))}회",
+                         type="primary", icon=":material/verified:", key="verify_skipped"):
+                _ro.start_verify_job(p, _s, [it["key"] for it in _skipped])
+                st.rerun()
+        _verify_job_view()
 
 # ---------- 항목별 등급 ----------
 _n = len(GRADE_RULES)

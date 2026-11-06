@@ -48,8 +48,14 @@ def live():
         el = (datetime.now() - datetime.fromisoformat(pr["started"])).total_seconds()
         left = max(1, round(el / got * (total - got) / 60))
         eta = f" · 예상 남은 시간 약 {left // 60}시간 {left % 60}분" if left >= 60 else f" · 예상 남은 시간 약 {left}분"
-    st.progress(min(got / total, 1.0),
-                text=f"{got}/{total}문항 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}{eta}")
+    # 담당자 피드백 2026-11-06: 중지 버튼을 진행률 바로 옆에 둔다
+    _pc1, _pc2 = st.columns([5, 1], vertical_alignment="center")
+    _pc1.progress(min(got / total, 1.0),
+                  text=f"{got}/{total}문항 처리 · 페이지 {pr.get('pages_done', 0)}/{pr.get('pages_total', 0)}{eta}")
+    if state == "running_here" and _pc2.button("중지", icon=":material/stop_circle:", key="stop_top", width="stretch",
+                                               help="지금 출제 중인 페이지까지 마치고 멈춥니다. '이어서 출제'로 남은 문항을 계속할 수 있습니다."):
+        stop_batch(p, sel)
+        st.toast("중지 요청 — 지금 페이지를 마치면 멈춥니다.", icon=":material/stop_circle:")
     if status in ("running", "running_here"):
         st.caption("끝나거나 멈추면 윈도우 알림이 뜹니다. 이 화면을 닫아도 출제는 계속됩니다(대시보드 실행 창은 닫지 마세요).")
     c = st.columns(4)
@@ -83,10 +89,7 @@ def live():
             st.switch_page("app_pages/quality.py")
         if n2.button("검수로 바로 가기", icon=":material/fact_check:", key="to_review", width="stretch"):
             st.switch_page("app_pages/review.py")
-    if state == "running_here":
-        if st.button("중지", type="secondary"):
-            stop_batch(p, sel)
-    elif state in RESUMABLE:
+    if state in RESUMABLE and state != "running_here":
         if st.button("이어서 출제(남은 문항)", type="primary"):
             try:
                 resume_batch(p, llm_settings.load(), sel)

@@ -75,7 +75,15 @@ def row_values(project, item: dict, opts: dict) -> list:
     prefix = project.meta.get("subject_tag", "") if opts.get("subject_prefix") else ""
     return [item.get("chasi"), type_name(item["type"]), page_cell(project, item), item["no"],
             stem_text(item, prefix), *choices, answer_cell(item), item.get("explanation", ""),
-            _scoring(item, opts), opts.get("score", 5), None, None, None, None]
+            _scoring(item, opts), opts.get("score", 5), None, None, None, _difficulty(item)]
+
+
+def _difficulty(item: dict) -> str:
+    """Q열 '난이도'(담당자 피드백 2026-11-06): 제출 양식 칸(A~P) 밖에 보이게 둔다. 담당자 판정이 있으면 그것, 없으면 AI 판정."""
+    from ..quality_report import actual_difficulty  # 담당자 판정 > AI 검수 판정 > 표시 난이도(품질 리포트·자동 선정과 같은 기준)
+    if item.get("validation") is None or "difficulty" not in item:  # 기출 등 난이도 정보가 없는 문항
+        return item.get("difficulty") or ""
+    return actual_difficulty(item)
 
 
 def _scoring(item: dict, opts: dict) -> str:
@@ -116,6 +124,9 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
         ws.delete_rows(4, ws.max_row - 3)
     for r in [r for r in ws.row_dimensions if r >= 4]:  # 예시 행의 높이 설정 잔여물 제거 (Codex C19)
         del ws.row_dimensions[r]
+    ws.cell(row=2, column=17, value="난이도\n(담당자 판정 우선)")._style = copy(head_style)  # Q열 — 양식(A~P) 밖
+    ws.cell(row=3, column=17)._style = copy(sub_style)
+    ws.column_dimensions["Q"].width = 12
     for i, name in enumerate(HIDDEN_COLS):
         col = FIRST_HIDDEN + i
         ws.cell(row=2, column=col, value=name)._style = copy(head_style)

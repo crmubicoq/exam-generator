@@ -175,6 +175,7 @@ def render_sidebar():
         _step_menu()
         settings_box()
         _version_footer()
+    _account_check()
 
 
 # 단계 메뉴: (단계 키, 화면, 아이콘, 이름). 단계 키가 None이면 상태 표시 없음
@@ -289,6 +290,14 @@ def settings_box():
             st.caption("구독 로그인 방식은 이 PC에 로그인한 계정을 씁니다(윈도우 사용자마다 따로). "
                        + ("Codex는 'Codex_로그인.bat'을 처음 한 번 실행해 로그인합니다. " if "codex_cli" in used else "")
                        + "이 도구는 로그인 정보를 저장하지 않습니다.")
+        st.markdown("**검수 설정**")
+        _skip = st.toggle("급할 때 '수정 후 AI 재검증 없이 승인' 허용", value=bool(last_project().get("allow_skip_reverify")),
+                          key="allow_skip_reverify_tg")
+        st.caption("켜면 검수 화면에서 사람이 고친 문항을 AI 재검증 없이 **검수자 책임으로** 승인할 수 있습니다. "
+                   "형식·원고 근거·규칙·중복 검사는 그대로 통과해야 하고, 승인한 문항은 'AI 검증 생략' 대기열에 남아 "
+                   "나중에 품질 리포트의 '생략한 AI 검증 실행'으로 검증할 수 있습니다. 평소에는 꺼 두세요.")
+        if _skip != bool(last_project().get("allow_skip_reverify")):
+            set_pref(allow_skip_reverify=_skip)
         st.markdown("**출제 속도 설정**")
         st.caption("문항 내용·품질에는 영향이 없습니다. 보통은 기본값(8 · 3) 그대로 둡니다.")
         chunk = st.number_input("AI 한 번에 만드는 문항 수 (기본 8)", 1, 20, s.chunk_size)
@@ -358,6 +367,42 @@ def _version_footer():
     if msg:
         st.success(msg, icon=":material/system_update_alt:")
     st.caption(f"평가문항 자동 출제 · 버전 **{label()}**  \n문의할 때 버전을 함께 알려 주세요.")
+
+
+@st.dialog("이 PC의 출제 계정 확인", width="large")
+def _account_dialog(a: dict):
+    from . import claude_account as CA
+    st.markdown(f"이 PC는 **{a.get('email') or '(이메일 없음)'}** 계정"
+                + (f"(요금제 **{a['plan']}**)" if a.get("plan") else "") + "으로 출제합니다.")
+    st.caption("출제는 이 계정의 Claude 구독 사용량을 씁니다. Claude 로그인은 프로그램이 아니라 윈도우 사용자 폴더에 저장되므로, "
+               "이 PC에서 전에 Claude Code 등으로 로그인한 적이 있으면 새로 설치해도 그 계정이 그대로 보입니다. "
+               "**이 PC를 쓰는 분의 계정이 맞는지** 확인해 주세요.")
+    c1, c2 = st.columns(2)
+    if c1.button("맞습니다", type="primary", icon=":material/check:", width="stretch"):
+        set_pref(account_confirmed=a.get("email") or "")
+        st.rerun()
+    if c2.button("다른 계정으로 로그인", icon=":material/login:", width="stretch"):
+        st.session_state.pop("claude_acct", None)
+        set_pref(account_confirmed="")
+        if CA.open_login_window():
+            st.info("로그인 창을 열었습니다. 브라우저에서 승인한 뒤 사이드바 AI 설정 → **계정 다시 확인**을 누르세요.")
+        else:
+            st.error("로그인 창을 열지 못했습니다. 프로그램 폴더의 'Claude_로그인.bat'을 실행하세요.")
+
+
+def _account_check():
+    """처음 보는 Claude 계정이면 한 번 확인받는다(담당자 피드백 2026-11-06: 새로 설치했는데 이미 로그인되어 있었음).
+    확인한 이메일은 data/ui_state.json의 account_confirmed에 남기고, 계정이 바뀌면 다시 묻는다. 세션마다 한 번만 검사한다."""
+    ss = st.session_state
+    if ss.get("_acct_checked") or "claude_agent_sdk" not in llm_settings.load().providers_in_use():
+        return
+    ss["_acct_checked"] = True
+    from . import claude_account as CA
+    if "claude_acct" not in ss:
+        ss["claude_acct"] = CA.status()
+    a = ss["claude_acct"]
+    if a.get("logged_in") and a.get("email") and last_project().get("account_confirmed") != a["email"]:
+        _account_dialog(a)
 
 
 def claude_account_box():

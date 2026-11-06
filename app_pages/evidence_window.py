@@ -32,6 +32,9 @@ def follow():
     with left:
         with st.container(border=True):
             st.markdown(question_html(item), unsafe_allow_html=True)
+            if item.get("explanation"):  # 담당자 피드백 2026-11-06: 새 창에서도 해설을 함께 본다
+                st.markdown("**해설**")
+                st.markdown(item["explanation"])
     with right:
         # 키에 문항·수정 시각을 넣어 문항이 바뀔 때만 뷰어를 새로 그린다(2초마다 깜빡이지 않게)
         evidence_panel(p, item, key_prefix=f"win_{key}", viewer_height=900)

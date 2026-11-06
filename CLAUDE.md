@@ -27,7 +27,7 @@
 6. [알림] 섞어 쓰기 교차 검증 테스트(출제 Claude + G4·G5 Codex), 사내 LiteLLM 시험(주소·키 받은 뒤 '모델 목록 불러오기', 보안 정책 확인).
 
 ## 개발 메모
-- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 93개, `pytest.ini`로 tests/만 탐색).
+- 실행: `run.bat` 또는 `python -m streamlit run app.py --server.port 8620`. 테스트: `python -m pytest -q`(현재 94개, `pytest.ini`로 tests/만 탐색).
 - CLI: `python -m exam_gen.cli new|run|export|report|pool <프로젝트>` (`run --provider claude_agent_sdk|codex_cli`).
 - 출력 콘솔이 cp949라 한글이 깨지면 `PYTHONIOENCODING=utf-8`.
 - 프롬프트를 바꾸면 `exam_gen/config.py`의 `PROMPT_VERSION`을 올린다.

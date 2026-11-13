@@ -415,7 +415,7 @@ class Project:
             return new_g.get(old_key.get(g)) if g is not None else None
 
         lost_n = 0
-        for it in self.items(status=["approved", "auto_pass", "warn", "manual", "deleted", "prior"]):
+        for it in self.items(status=["approved", "auto_pass", "warn", "manual", "hold", "deleted", "prior"]):
             before = json.dumps(it, ensure_ascii=False, sort_keys=True)
             touches = relocate and (old_src.get(it.get("page")) == relocate or any(
                 old_src.get((e.get("match") or {}).get("g")) == relocate for e in it.get("evidence") or []))
@@ -516,6 +516,14 @@ class Project:
         pg = self.pages[g]
         return pg.get("alt_text") or content_text(pg["lines"])
 
+    def item_source_text(self, item: dict) -> str:
+        """문항의 근거 원고 쪽(출제 쪽·근거 인용문이 찾아진 쪽) 글자를 이어 붙인다 — 규칙 검사의 원고 용어 예외용."""
+        gs = set(item.get("source_pages") or []) | {e["match"]["g"] for e in item.get("evidence") or [] if e.get("match")}
+        if item.get("page") is not None:
+            gs.add(item["page"])
+        n = len(self.pages)
+        return "\n".join(self.page_text(g) for g in sorted(gs) if isinstance(g, int) and 0 <= g < n)
+
     @property
     def manuscript_path(self) -> Path:
         return self.dir / "manuscript.pdf"
@@ -579,16 +587,20 @@ class Project:
         nums = [int(s["sid"][1:]) for b in self.batches() for s in b["slots"] if s["sid"][1:].isdigit()]
         return max(nums, default=0) + 1
 
+    @staticmethod
+    def _next_k(c) -> str:
+        """다음 문항 키. 행 수(COUNT)로 정하면 기출(P…)을 지운 뒤 기존 K 키와 겹쳐 문항을 덮어쓴다(2026-11-10 큰 표본 시험에서 발견)."""
+        nums = [int(k[1:]) for (k,) in c.execute("SELECT key FROM items WHERE key LIKE 'K%'") if k[1:].isdigit()]
+        return f"K{max(nums, default=0) + 1:05d}"
+
     def next_key(self) -> str:
         with self._conn() as c:
-            n = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-        return f"K{n + 1:05d}"
+            return self._next_k(c)
 
     def save_item(self, item: dict, event: str | None = None, detail: dict | None = None) -> dict:
         with _LOCK, self._conn() as c:
             if not item.get("key"):
-                n = c.execute("SELECT COUNT(*) FROM items").fetchone()[0]
-                item["key"] = f"K{n + 1:05d}"
+                item["key"] = self._next_k(c)
                 item["created"] = now()
             item["updated"] = now()
             c.execute("INSERT OR REPLACE INTO items VALUES(?,?,?,?,?,?,?,?,?,?)",

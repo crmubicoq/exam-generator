@@ -17,11 +17,12 @@ from exam_gen.review_view import evidence_panel, question_html, quote_box, quote
 PAGE_SIZE = 50          # 목록 한 쪽에 담는 문항 수
 CIRCLED = "①②③④"
 QUEUES = {"todo": ("확인 필요", ("manual", "warn")), "ms": ("원고 변경", ()), "skip": ("AI 검증 생략", ()),
-          "auto": ("자동통과", ("auto_pass",)),
+          "auto": ("자동통과", ("auto_pass",)), "hold": ("보류", ("hold",)),
           "done": ("승인", ("approved",)), "del": ("삭제", ("deleted",)),
-          "all": ("전체", ("manual", "warn", "auto_pass", "approved", "deleted"))}
+          "all": ("전체", ("manual", "warn", "auto_pass", "hold", "approved", "deleted"))}
 _ICON = {"approved": ":green[:material/check_circle:]", "auto_pass": ":blue[:material/task_alt:]",
-         "warn": ":orange[:material/warning:]", "manual": ":red[:material/error:]", "deleted": ":gray[:material/delete:]"}
+         "warn": ":orange[:material/warning:]", "manual": ":red[:material/error:]", "hold": ":violet[:material/pause_circle:]",
+         "deleted": ":gray[:material/delete:]"}
 _LIST_CSS = """<style>
 .st-key-review_list {max-height:calc(100vh - 21rem); min-height:260px; overflow-y:auto; flex:0 0 auto;
   border:1px solid rgba(49,51,63,.2); border-radius:.5rem; padding:.4rem;}
@@ -62,6 +63,16 @@ who = h2.text_input("검수자 이름", key="who", placeholder="이름 입력",
                     help="승인 기록에 남습니다. 한 번 넣으면 다음에도 기억합니다.")
 if who != last_project().get("reviewer", ""):
     set_pref(reviewer=who)
+
+# 검사 기준이 바뀐 버전에서 처음 열 때, 승인 전 문항을 새 기준으로 한 번 다시 확인한다(AI 사용 없음)
+RULES_VERSION = "1.2.0"
+if p.meta.get("rules_version") != RULES_VERSION and p.items():
+    with st.spinner("검사 기준이 바뀌어 승인 전 문항을 다시 확인하는 중입니다(AI 사용 없음)…"):
+        _r = review_ops.refresh_rules(p)
+    p.update_meta(rules_version=RULES_VERSION)
+    if _r["released"]:
+        st.session_state["review_flash"] = (f"바뀐 검사 기준(v{RULES_VERSION})으로 다시 확인해 {_r['released']}문항이 "
+                                            "'수동확인'에서 풀렸습니다")
 
 items = p.items()
 if not items:
@@ -235,13 +246,26 @@ with mid:
                 MU.start_revise(p, llm_settings.load(), [saved["key"]])
                 st.switch_page("app_pages/progress.py")
 
-    for f in saved["validation"].get("fails", []):
-        st.error(f, icon=":material/block:")
-    warns = saved["validation"].get("warnings", [])
+    if saved.get("status") == "hold" and saved.get("hold"):
+        _h = saved["hold"]
+        st.info(f"**보류** — {_h.get('kind')}" + (f": {_h['memo']}" if _h.get("memo") else "")
+                + f" ({_h.get('by') or '이름 없음'}, {str(_h.get('at', ''))[:10]})", icon=":material/pause_circle:")
+    _j = saved["validation"].get("judgment")
+    if _j and integrity.has_judgment(saved):
+        st.success(f"**검수자 판단으로 승인** — {_j.get('by')} ({str(_j.get('at', ''))[:10]})"
+                   + (f" · 메모: {_j['note']}" if _j.get("note") else "")
+                   + ("  \n막혀 있던 사유: " + " / ".join(_j.get("reasons") or []) if _j.get("reasons") else ""),
+                   icon=":material/how_to_reg:")
+    _fails = list(dict.fromkeys(saved["validation"].get("fails", [])))
+    for f in _fails:
+        st.error(ui.gate_text(f), icon=":material/block:")
+    warns = list(dict.fromkeys(saved["validation"].get("warnings", [])))
     if warns:
         with st.expander(f"경고 {len(warns)}건", icon=":material/warning:", expanded=False):
             for w in warns:
-                st.markdown(f"- {w}")
+                st.markdown(f"- {ui.gate_text(w)}")
+    if _fails or warns:
+        st.caption("검사 이름 — " + ui.gate_legend())
 
     # --- 문항 읽기: 보기(진술·정답)마다 근거 인용문을 바로 아래에 (상자 안 스크롤 없음) ---
     with st.container(border=True):
@@ -305,10 +329,46 @@ with mid:
             review_ops.set_status(p, saved["key"], "restore", "")
             st.rerun()
         if reasons and saved["status"] != "deleted":
-            st.caption(":material/info: 승인 전 해결할 것 — " + " / ".join(reasons))
+            st.caption(":material/info: 승인 전 해결할 것 — " + " / ".join(ui.gate_text(r) for r in dict.fromkeys(reasons)))
+        _skip_case = (last_project().get("allow_skip_reverify", True) and review_ops.can_skip_reverify(saved)
+                      and reasons == [integrity.AI_STALE])
+        # 검수자 판단으로 승인(담당부서 피드백 2026-11-13 #1): 막는 사유가 무엇이든 검수자가 확인하고 책임지고 승인한다
+        if reasons and not _skip_case and saved["status"] not in ("deleted", "approved"):
+            with st.container(border=True):
+                st.markdown(":violet[:material/how_to_reg:] **검수자 판단으로 승인**")
+                st.caption("위 사유를 직접 확인했고 문항에 문제가 없다고 판단할 때 씁니다. 막혔던 사유·검수자 이름·메모가 승인 기록에 "
+                           "남고, 엑셀 '검증 메모'와 품질 리포트에 '검수자 판단 승인'으로 표시됩니다. 문항을 다시 고치면 이 승인은 풀립니다.")
+                j_note = st.text_input("판단 메모(권장)", key=f"j_note_{saved['key']}",
+                                       placeholder="예: 원고 표현을 쉽게 바꾼 것이라 정답에 문제 없음")
+                j_ok = st.checkbox("사유를 확인했고, 검수자 판단으로 책임지고 승인합니다", key=f"j_ok_{saved['key']}")
+                if st.button("검수자 판단으로 승인", icon=":material/how_to_reg:", disabled=not (who and j_ok),
+                             key=f"j_btn_{saved['key']}"):
+                    ok, fails = review_ops.approve_by_judgment(p, saved["key"], who, j_note.strip())
+                    if ok:
+                        st.session_state["review_flash"] = f"{saved['key']} 검수자 판단으로 승인했습니다"
+                        st.session_state["review_check_done"] = True
+                        _leave_to_next()
+                        st.rerun()
+                    else:
+                        st.error("승인할 수 없습니다: " + " / ".join(fails), icon=":material/block:")
+        # 보류(담당부서 피드백 2026-11-13 #7): 일단 두고 나중에 판단 — 출력할 때 포함 여부를 고른다
+        if saved["status"] not in ("deleted", "hold"):
+            with st.popover("보류", icon=":material/pause_circle:"):
+                st.caption("일단 두고 나중에 판단할 문항입니다. '보류' 대기열에 모이고, 출력할 때 포함할지 고릅니다.")
+                h_kind = st.radio("보류 사유", review_ops.HOLD_KINDS, horizontal=True, key=f"h_kind_{saved['key']}")
+                h_memo = st.text_input("메모", key=f"h_memo_{saved['key']}")
+                if st.button("보류로 두기", key=f"h_btn_{saved['key']}", icon=":material/pause_circle:"):
+                    review_ops.set_hold(p, saved["key"], h_kind, h_memo.strip(), who)
+                    st.session_state["review_flash"] = f"{saved['key']} 보류했습니다({h_kind})"
+                    _leave_to_next()
+                    st.rerun()
+        elif saved["status"] == "hold":
+            if st.button("보류 풀기", icon=":material/play_circle:", key=f"unhold_{saved['key']}",
+                         help="보류 전 검사 결과에 따라 자동통과·경고·수동확인으로 돌아갑니다."):
+                review_ops.set_status(p, saved["key"], "restore", "보류 풀기")
+                st.rerun()
         # 급할 때: 사람이 고친 문항을 AI 재검증 없이 검수자 책임으로 승인(사이드바 AI 설정 → 검수 설정에서 켠 경우만)
-        if (last_project().get("allow_skip_reverify", True) and review_ops.can_skip_reverify(saved)
-                and reasons == [integrity.AI_STALE]):
+        if _skip_case:
             with st.container(border=True):
                 st.markdown(":orange[:material/bolt:] **급할 때: AI 재검증 없이 승인**")
                 st.caption("고친 내용이 정답 유일성·함정 모순을 깨지 않았는지 AI가 다시 확인하지 않습니다. 검수자가 직접 확인한 뒤 "
@@ -360,8 +420,11 @@ with mid:
                            "is_true": bool(r["참 진술"]) if not pd.isna(r["참 진술"]) else False,
                            "trap_note": _s(r["함정 메모"])}
                           for _, r in edf.iterrows() if _s(r["대상"])]
-        note = st.text_input("수정 메모(선택)")
+        # 문항마다 메모 칸을 따로 둔다 — 같은 칸을 쓰면 다음 문항으로 넘어가도 이전 메모가 남았다(피드백 #4)
+        _note_key = f"note_{saved['key']}"
+        note = st.text_input("수정 메모(선택)", key=_note_key)
         if st.button("수정 저장", icon=":material/save:"):
+            st.session_state.pop(_note_key, None)  # 저장한 뒤에는 비운다
             if it.get("statements"):
                 correct = [s["label"] for s in it["statements"] if s.get("is_true")]
                 sets = choice_builder.build(correct, int(it["answer"]))

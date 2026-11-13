@@ -11,7 +11,7 @@ from exam_gen.cost import estimate, hard_extra_minutes
 from exam_gen.generate.generator import start_batch
 from exam_gen.llm import settings as llm_settings
 from exam_gen.plan import calibrate
-from exam_gen.plan.coverage import allocate, largest_remainder
+from exam_gen.plan.coverage import allocate, largest_remainder, repair_alloc
 from exam_gen.plan.slots import build_slots, check_options, summarize
 
 p = ui.require_project(ui.current_project())
@@ -47,19 +47,23 @@ if mode == "최초 출제":
     st.caption(f"실제 출제 **{n}문항** = 필요 {total}문항 + 여유분 {extra}% (검수에서 지울 문항 대비)")
     alloc = allocate(pages, n)
 elif mode == "추가 출제":
-    how = st.radio("수량 입력 방식", ["난이도별 수량", "총 수량 + 난이도 %"], horizontal=True)
-    if how == "난이도별 수량":
-        cols = st.columns(4)
-        diff_counts = {lv: cols[i].number_input(f"{lv} 문항 수", 0, 1000, 0, key=f"dc_{lv}") for i, lv in enumerate(LV)}
-        n = sum(diff_counts.values())
-    else:
-        n = st.number_input("추가 문항 수", 0, 3000, 50)
-        st.caption("난이도 구성은 아래 난이도 비율(%)로 나눕니다.")
+    # 입력 방식을 '총 수량 + 난이도 %' 하나로 통일(담당부서 피드백 2026-11-13 #11 — 쓰지 않는 칸이 보여 헷갈렸다)
+    n = st.number_input("추가 문항 수", 0, 3000, 50)
+    st.caption("난이도 구성은 아래 **난이도 비율(%)**로 나눕니다. 비율 옆에 난이도별 문항 수가 표시됩니다.")
     alloc = allocate(pages, n, existing=dict(existing_pages)) if n else {}
 else:
-    st.caption("출제 진행·품질 리포트에서 문항이 없는 페이지가 보이면, 아래 '페이지 배분' 표의 '이번 출제' 칸에 페이지별 문항 수를 넣어 그 페이지만 다시 출제합니다.")
-    alloc = {}
-    n = 0
+    st.caption("문항이 없거나 적은 페이지만 다시 출제합니다. 아래 **'페이지별 문항 수 직접 지정'**을 끄면 문항 수만 넣어 "
+               "자동으로 배정하고, 켜면 '페이지 배분' 표의 '이번 출제' 칸에 페이지마다 직접 넣습니다.")
+    c1, c2 = st.columns(2)
+    n = c1.number_input("다시 출제할 문항 수", 0, 1000, 10, key="repair_n")
+    max_ex = c2.number_input("대상 페이지: 기존 문항이 몇 개 이하인 페이지", 0, 20, 0, key="repair_max",
+                             help="0이면 문항이 하나도 없는 페이지에만 배정합니다.")
+    _targets = [x for x in elig if existing_pages.get(x["g"], 0) <= max_ex]
+    alloc = repair_alloc(pages, n, dict(existing_pages), int(max_ex))
+    st.caption(f"대상 페이지 **{len(_targets)}쪽** (기존 문항 {max_ex}개 이하) — 문항이 적은 페이지부터, 같으면 글자 수가 많은 "
+               "페이지부터 한 문항씩 돌아가며 배정합니다.")
+    if not _targets:
+        st.warning("조건에 맞는 페이지가 없습니다. '기존 문항이 몇 개 이하'를 늘리세요.", icon=":material/warning:")
 
 
 # ---------- 공통 비율 ----------
@@ -117,8 +121,7 @@ new_opts = {**opts, "difficulty_pct": dpct, "type_pct": tpct, "mcq_positive_pct"
             "max_retries": retries, "score": score, "scoring": scoring, "numbering": numbering, "subject_prefix": prefix, "difficulty_topup": topup, "difficulty_calibrate": calib,
             "fast_mode": fast, **_qty}
 if mode == "추가 출제":
-    if how == "총 수량 + 난이도 %":
-        diff_counts = largest_remainder(n, dpct)
+    diff_counts = largest_remainder(n, dpct)
     st.caption(f"추가 출제 난이도 구성: {' · '.join(f'{k} {v}' for k, v in diff_counts.items())} · "
                f"기존 {len(items)}문항과 겹치지 않게 출제합니다.")
 
@@ -126,8 +129,9 @@ if mode == "추가 출제":
 st.subheader(":material/grid_view: 페이지 배분")
 st.caption("위 문항 수를 원고 분량(글자 수)에 맞춰 페이지마다 나눈 결과입니다. 차시가 나뉘어 있으면 차시별로 먼저 나눕니다.")
 
-forced = st.toggle("페이지별 문항 수 직접 지정", value=mode == "페이지 재출제", disabled=mode == "페이지 재출제",
-                   help="끄면 분량(글자 수)에 맞춰 자동으로 나눕니다. 보통은 끈 채로 둡니다.")
+forced = st.toggle("페이지별 문항 수 직접 지정", value=False, key=f"forced_{mode}",
+                   help="끄면 자동으로 나눕니다(최초·추가 출제는 분량(글자 수)에 맞춰, 페이지 재출제는 문항이 적은 페이지부터). "
+                        "보통은 끈 채로 둡니다.")
 df = pd.DataFrame([{"g": x["g"], "책 쪽수": x["label"], "차시": x["chasi"], "글자 수": x["chars"],
                     "기존 문항": existing_pages.get(x["g"], 0), "이번 출제": alloc.get(x["g"], 0)} for x in elig])
 if forced:
@@ -135,10 +139,7 @@ if forced:
                         disabled=["g", "책 쪽수", "차시", "글자 수", "기존 문항"], column_config={"g": None})
     alloc = {int(r["g"]): int(r["이번 출제"]) for _, r in df.iterrows() if int(r["이번 출제"]) > 0}
     n = sum(alloc.values())
-    if mode != "추가 출제":
-        diff_counts = largest_remainder(n, dpct)
-    elif diff_counts is not None and sum(diff_counts.values()) != n:
-        st.error(f"페이지별 문항 수 합계({n})와 난이도별 수량 합계({sum(diff_counts.values())})가 다릅니다 — 둘 중 하나를 맞추세요.")
+    diff_counts = largest_remainder(n, dpct)
 else:
     ui.bar_chart(df, "책 쪽수", ["기존 문항", "이번 출제"], stack=True, height=260)
 
@@ -151,8 +152,7 @@ def _calib_table():
 
 calib_info = None
 if calib and n:
-    explicit = mode == "추가 출제" and how == "난이도별 수량"
-    target_pct = {lv: diff_counts.get(lv, 0) * 100 / n for lv in LV} if explicit else dpct
+    target_pct = dpct
     tab, n_hist = _calib_table()
     diff_counts = calibrate.plan(n, target_pct, largest_remainder(n, tpct), tab)
     calib_info = {"goal": {lv: n * target_pct.get(lv, 0) / 100 for lv in LV},
@@ -194,26 +194,30 @@ if n and not problems:
                f"선다형 정답 위치 {pos_txt} · 진위형 O/X {sm['answer'].get('O', 0)}/{sm['answer'].get('X', 0)} · "
                f"조합형 {sm['combo']} · 유형별 난이도: 단답형은 하·중, 진위형은 상까지(상은 정답 X)")
     if calib_info:
+        # 목표·출제 지시·예상 판정을 한 표에 나란히(담당부서 피드백 2026-11-13 #2 — 두 숫자가 달라 불일치처럼 보였다)
         g, e = calib_info["goal"], calib_info["expected"]
-        st.info("**난이도 보정 출제** — 검수 판정 기준 목표 " + " · ".join(f"{lv} {g[lv]:.0f}" for lv in LV)
-                + " → 위처럼 출제를 지시하면 예상 판정 " + " · ".join(f"{lv} {e[lv]:.0f}" for lv in LV) + ". "
-                + ("판정 비율은 개발 시험 실측" if calib_info["history"] < 20 else
-                   f"판정 비율은 이 PC 출제 기록 {calib_info['history']}문항과 개발 시험 실측")
-                + "으로 계산합니다."
-                + (f" **최상은 예상 {e['최상']:.0f}문항으로 목표에 못 미칩니다** — 최상 기준은 담당자와 협의 중입니다."
-                   if g["최상"] >= 1 and e["최상"] < g["최상"] * 0.8 else "")
-                + (f" **중은 예상 {e['중']:.0f}문항으로 목표보다 적고 하가 많습니다** — '중'으로 낸 문항을 AI가 '하'로 많이 판정합니다. "
-                   "검수 화면 '담당자 판정 난이도'로 바로잡을 수 있고, 판정 기준은 담당부서가 정합니다."
-                   if g["중"] >= 1 and e["중"] < g["중"] * 0.8 else ""), icon=":material/tune:")
+        with st.container(border=True):
+            st.markdown(":material/tune: **난이도 보정 — 목표와 출제 지시가 다른 이유**")
+            st.caption("AI 검수는 출제 의도보다 난이도를 한 단계 낮게 판정하는 경향이 있습니다. 그래서 **최종 판정이 목표에 가깝게 "
+                       "나오도록 AI에게는 조금 더 어렵게 지시**합니다. 출력·자동 선정·품질 리포트는 '최종 판정' 기준입니다. "
+                       "목표대로 그대로 지시하려면 '세부 옵션'에서 **난이도 보정 출제**를 끄세요.")
+            st.dataframe(pd.DataFrame([{"난이도": lv, "① 목표(최종 판정 기준)": round(g[lv]),
+                                        "② 출제 지시(AI에게 요청)": sm["difficulty"].get(lv, 0),
+                                        "③ 예상 판정": round(e[lv])} for lv in LV]),
+                         hide_index=True, width="stretch")
+            st.caption("①은 위 난이도 비율로 계산한 수, ②는 실제로 출제를 지시하는 수(위 '출제 지시 난이도' 카드), ③은 ②로 출제했을 때 "
+                       + ("개발 시험 실측" if calib_info["history"] < 20 else
+                          f"이 PC 출제 기록 {calib_info['history']}문항과 개발 시험 실측")
+                       + "으로 예상한 판정 결과입니다.")
+            if g["최상"] >= 1 and e["최상"] < g["최상"] * 0.8:
+                st.caption(f":orange[최상은 예상 {e['최상']:.0f}문항으로 목표에 못 미칩니다] — 최상 기준은 담당부서와 협의 중입니다.")
+            if g["중"] >= 1 and e["중"] < g["중"] * 0.8:
+                st.caption(f":orange[중은 예상 {e['중']:.0f}문항으로 목표보다 적고 하가 많습니다] — 검수 화면 '담당자 판정 난이도'로 "
+                           "바로잡을 수 있고, 판정 기준은 담당부서가 정합니다.")
     # ---- 비율 옆에 문항 수 표시(담당자 요청 2026-11-03) ----
-    explicit_n = mode == "추가 출제" and how == "난이도별 수량"
-    goal_d = {lv: round(calib_info["goal"][lv]) for lv in LV} if calib_info else (
-        sm["difficulty"] if not explicit_n else diff_counts)
+    goal_d = {lv: round(calib_info["goal"][lv]) for lv in LV} if calib_info else sm["difficulty"]
     for lv in LV:
-        if explicit_n:
-            d_cnt[lv].caption(f"→ {goal_d.get(lv, 0)}문항 (아래 난이도별 수량 기준)")
-        else:
-            d_cnt[lv].caption(f"→ {goal_d.get(lv, 0)}문항" + (" (판정 기준 목표)" if calib_info else ""))
+        d_cnt[lv].caption(f"→ 목표 {goal_d.get(lv, 0)}문항" + (f" · 출제 지시 {sm['difficulty'].get(lv, 0)}" if calib_info else ""))
     for t in C["type_order"]:
         t_cnt[t].caption(f"→ {sm['type'].get(t, 0)}문항")
     _mcq = sm["type"].get("mcq", 0)

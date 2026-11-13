@@ -14,21 +14,22 @@ from .llm.client import LLMClient
 from .store import Project, now
 from .validate import dedup, evidence, review_llm, rules, schema, solver
 
-ACCEPTED = ("approved", "auto_pass", "warn", "prior")  # G6 비교 대상: 채택된 문항 + 기출(수동확인·삭제 후보 제외, Codex C7)
+ACCEPTED = ("approved", "auto_pass", "warn", "hold", "prior")  # G6 비교 대상: 채택된 문항·보류 + 기출(수동확인·삭제 후보 제외, Codex C7)
 
 
 def revalidate_code(project: Project, item: dict) -> tuple[list[str], list[str]]:
     rules.autofix(item)
     fails = schema.check_structure(item, item["slot"])
     ef, ew = evidence.check_item(project.pages, item)
-    rf, rw = rules.check(item)
+    rf, rw = rules.check(item, project.item_source_text(item))
     others = [o for o in project.items(status=list(ACCEPTED)) if o["key"] != item["key"]]
     df, dw, best = dedup.check(item, others)
     item["validation"]["G6"] = best
     return fails + ef + rf + df, ew + rw + dw
 
 
-PENDING = ("manual", "warn", "auto_pass")  # 사람이 아직 승인·삭제하지 않은 문항
+PENDING = ("manual", "warn", "auto_pass", "hold")  # 사람이 아직 승인·삭제하지 않은 문항(보류 포함)
+HOLD_KINDS = ["중복 의심", "내용 확인", "기타"]
 
 
 def pending_counts(items: list[dict]) -> dict[str, int]:
@@ -53,7 +54,7 @@ def save_edit(project: Project, item: dict, note: str = "") -> dict:
     if changed:
         item["validation"]["llm_stale"] = True
         item.pop("approved", None)
-    if item.get("status") == "deleted":
+    if item.get("status") in ("deleted", "hold"):
         pass
     elif fails:
         item["status"] = "manual"
@@ -77,6 +78,7 @@ def approve(project: Project, key: str, who: str = "", evidence_confirmed: bool 
         project.save_item(item, "approve_blocked", {"by": who, "reasons": reasons})
         return False, reasons
     item["status"] = "approved"
+    item.pop("hold", None)
     item["approved"] = {"at": now(), "by": who, "hash": integrity.content_hash(item),
                         "evidence_confirmed": bool(evidence_confirmed),
                         "warnings_at_approval": item["validation"].get("warnings", [])}
@@ -115,6 +117,77 @@ def approve_without_reverify(project: Project, key: str, who: str, evidence_conf
     return ok, reasons
 
 
+def approve_by_judgment(project: Project, key: str, who: str, note: str = "") -> tuple[bool, list[str]]:
+    """검수자 판단으로 승인(담당부서 피드백 2026-11-13 #1): 승인을 막는 사유(자동 검사·AI 검증·근거 확인 등)가 있어도 검수자가
+    사유를 확인하고 책임지고 승인한다. 막혔던 사유·검수자·메모를 기록하고, 출력·품질 리포트에 '검수자 판단 승인'으로 표시한다.
+    내용을 고치면 이 승인은 무효가 된다(내용 해시)."""
+    if not who:
+        return False, ["검수자 이름이 필요합니다"]
+    item = project.item(key)
+    if item.get("status") == "deleted":
+        return False, ["삭제된 문항"]
+    fails, _ = revalidate_code(project, item)
+    v = item["validation"]
+    v["fails"] = list(dict.fromkeys(fails + [f for f in v.get("fails", []) if f.startswith(("G4", "G5"))]))
+    reasons = integrity.block_reasons({**item, "validation": {**v, "judgment": None}})
+    if integrity.needs_evidence_confirm(item):
+        reasons.append("근거 부분 일치(L1) — 검수자 확인")
+    h = integrity.content_hash(item)
+    v["judgment"] = {"hash": h, "by": who, "at": now(), "reasons": reasons, "note": note}
+    item.pop("hold", None)
+    item["status"] = "approved"
+    item["approved"] = {"at": now(), "by": who, "hash": h, "evidence_confirmed": True, "judgment": True,
+                        "warnings_at_approval": v.get("warnings", [])}
+    project.save_item(item, "approve_judgment", {"by": who, "reasons": reasons, "note": note})
+    return True, []
+
+
+def set_hold(project: Project, key: str, kind: str, memo: str = "", who: str = "") -> dict:
+    """보류(담당부서 피드백 2026-11-13 #7): 일단 두고 나중에 판단할 문항. 승인은 풀리고, 출력할 때 포함 여부를 고른다."""
+    item = project.item(key)
+    item.setdefault("history", []).append({"at": now(), "action": "hold", "note": f"{kind} {memo}".strip(),
+                                           "from": item.get("status")})
+    item.pop("approved", None)
+    item["hold"] = {"kind": kind, "memo": memo, "by": who, "at": now()}
+    item["status"] = "hold"
+    return project.save_item(item, "set_hold", {"kind": kind, "memo": memo, "by": who})
+
+
+def refresh_rules(project: Project) -> dict:
+    """검사 기준이 바뀐 뒤(v1.2.0) 아직 승인·삭제하지 않은 문항을 AI 없이 다시 확인한다.
+    - 코드 관문(G1·G2·G3·G6)을 새 기준으로 다시 돌리고, 난이도 차이 실패는 경고로 옮긴다.
+    - 저장된 AI 검증(G4·G5) 실패가 없고 지금 내용에 대한 AI 검증 결과가 있으면 '검증 통과'로 바꾼다.
+    반환: {"checked", "released"} — released는 수동확인에서 풀린 문항 수."""
+    checked = released = 0
+    for item in project.items(status=["manual", "warn", "auto_pass", "hold"]):
+        v = item.get("validation") or {}
+        if v.get("llm_skipped"):
+            continue
+        before = list(v.get("fails") or [])
+        diff = [f for f in before if review_llm.is_difficulty_only(f)]
+        # 코드 관문(G1·G2·G3·G6) 결과만 새로 계산하고, AI 검증(G4·G5)·원고 변경 등 나머지 사유는 그대로 둔다
+        llm = [f for f in before if not f.startswith(("G1", "G2", "G3", "G6")) and f not in diff]
+        cf, cw = revalidate_code(project, item)
+        fails = list(dict.fromkeys(cf + llm))
+        v["fails"] = fails
+        v["warnings"] = list(dict.fromkeys([w for w in v.get("warnings", []) if not w.startswith(("G1", "G2", "G3", "G6"))]
+                                           + cw + [f.split(" — ")[0] + " — 참고(승인은 막지 않음)" for f in diff]))
+        checked += 1
+        st0 = item["status"]
+        if not fails and v.get("G4") and v.get("G5") and not v.get("llm_stale") and not v.get("ms_change") and item["status"] in ("manual", "warn", "auto_pass"):
+            was_manual = item["status"] == "manual"
+            review_llm.relabel_difficulty(item)
+            integrity.mark_verified(item)
+            item["status"] = "warn" if v["warnings"] else "auto_pass"
+            released += was_manual
+        elif fails and item["status"] in ("warn", "auto_pass"):
+            item["status"] = "manual"
+        if fails != before or item["status"] != st0:
+            project.save_item(item, "rules_refresh", {"fails": fails[:5]})
+    project.log("rules_refresh", {"checked": checked, "released": released})
+    return {"checked": checked, "released": released}
+
+
 def bulk_approve(project: Project, keys: list[str], who: str = "") -> dict:
     """일괄 승인은 근거 확인 표시를 줄 수 없으므로 L1 문항은 자동으로 제외(차단)된다."""
     ok, blocked = [], {}
@@ -129,8 +202,9 @@ def set_status(project: Project, key: str, status: str, reason: str = ""):
     item = project.item(key)
     item.setdefault("history", []).append({"at": now(), "action": status, "note": reason, "from": item.get("status")})
     if status == "restore":
-        # 복원은 승인을 되살리지 않는다 — 다시 승인받아야 한다
+        # 복원(보류 풀기 포함)은 승인을 되살리지 않는다 — 다시 승인받아야 한다
         item.pop("approved", None)
+        item.pop("hold", None)
         v = item["validation"]
         status = "manual" if v.get("fails") or not integrity.is_verified(item) else ("warn" if v.get("warnings") else "auto_pass")
     elif status == "deleted":
@@ -179,14 +253,14 @@ def verify_skipped(project: Project, settings, keys: list[str], progress=None, s
                             and (it.get("approved") or {}).get("hash") == integrity.content_hash(it))
             if v["fails"]:
                 v.pop("verified", None)
-                if it["status"] != "deleted":
+                if it["status"] not in ("deleted", "hold"):
                     it["status"] = "manual"  # 사람 책임으로 승인했던 문항도 AI 검증에서 탈락하면 승인이 풀린다
                 bad += 1
             else:
                 review_llm.relabel_difficulty(it)
                 review_llm.merge_variants(it)
                 integrity.mark_verified(it)
-                if it["status"] != "deleted":
+                if it["status"] not in ("deleted", "hold"):
                     if was_approved and (it.get("approved") or {}).get("hash") == integrity.content_hash(it):
                         it["status"] = "approved"  # 승인 당시 내용 그대로 통과 — 승인 유지
                     else:
@@ -242,7 +316,7 @@ def rerun_llm_gates(project: Project, settings, key: str) -> dict:
         integrity.mark_verified(item)
     else:
         item["validation"].pop("verified", None)
-    if item["status"] != "deleted":
+    if item["status"] not in ("deleted", "hold"):
         if item["validation"]["fails"]:
             item["status"] = "manual"
         elif not integrity.is_exportable(item):

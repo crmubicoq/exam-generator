@@ -5,16 +5,39 @@
 """
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
 from .llm import settings as llm_settings
 from .llm.client import LLMClient, login_status
 from .store import Project, last_project, list_projects, set_last_project, set_pref
 
-STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
+STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "hold": "보류", "deleted": "삭제"}
 TYPE_KO = {"mcq": "선다형", "ox": "진위형", "short": "단답형"}
 _BADGE = {"approved": ("green", "check_circle"), "auto_pass": ("blue", "task_alt"), "warn": ("orange", "warning"),
-          "manual": ("red", "error"), "deleted": ("gray", "delete")}
+          "manual": ("red", "error"), "hold": ("violet", "pause_circle"), "deleted": ("gray", "delete")}
+# 검사 번호(G1~G6) 대신 이름과 쉬운 설명을 함께 보여 준다(담당부서 피드백 2026-11-13 #9)
+GATE_KO = {"G1": ("형식 검사", "문항 구조(보기 수·정답 형식 등)가 맞는지"),
+           "G2": ("근거 대조", "문항 내용이 원고 문장과 맞는지"),
+           "G3": ("표기 규칙", "문어체·쪽수 노출·발문 형식 등 출제 지침"),
+           "G4": ("AI 독립 풀이", "정답을 숨기고 AI가 다시 풀어 같은 답이 나오는지"),
+           "G5": ("AI 검수", "함정·정답 단서·이의 제기 가능성 등"),
+           "G6": ("중복 검사", "이미 있는 문항·기출과 겹치는지")}
+
+
+def gate_text(msg: str) -> str:
+    """'G2: …' / 'G5[함정] …' → '근거 대조(G2): …' 처럼 검사 이름을 앞에 붙인다."""
+    m = re.match(r"^(G[1-6])(\[[^\]]*\])?\s*:?\s*", msg or "")
+    if not m:
+        return msg
+    name = GATE_KO[m.group(1)][0]
+    sub = f" {m.group(2)}" if m.group(2) else ""
+    return f"**{name}({m.group(1)})**{sub}: {msg[m.end():]}"
+
+
+def gate_legend() -> str:
+    return " · ".join(f"{k} {v[0]}: {v[1]}" for k, v in GATE_KO.items())
 
 
 def header(title: str, icon: str, caption: str = ""):

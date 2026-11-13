@@ -99,7 +99,21 @@ def autofix(item: dict):
         item["stem"] = re.sub(r"괄호\s*안에\s*들어갈", "괄호 안에 공통으로 들어갈", item["stem"], count=1)
 
 
-def check(item: dict) -> tuple[list[str], list[str]]:
+def _leak_in_source(text: str, source_text: str) -> bool:
+    """'원고'·쪽수 표현이 근거 원고에 실제로 있는 용어인가(예: '관리자 1페이지 보고' — 담당부서 피드백 2026-11-13 #10).
+    표현과 바로 뒤 두 글자까지 원고(띄어쓰기 무시)에 그대로 있으면 학습자에게 쪽수를 노출하는 것이 아니다."""
+    if not source_text:
+        return False
+    src = re.sub(r"\s", "", source_text)
+    for m in _LEAK.finditer(text):
+        tail = re.sub(r"\s", "", text[m.end():m.end() + 6])[:2]
+        if re.sub(r"\s", "", m.group()) + tail not in src:
+            return False
+    return True
+
+
+def check(item: dict, source_text: str = "") -> tuple[list[str], list[str]]:
+    """source_text: 근거 원고 쪽 글자(있으면 원고에 실제로 있는 '1페이지' 같은 용어는 노출로 보지 않는다)."""
     c = criteria()
     fails, warns = [], []
     t = item["type"]
@@ -170,7 +184,8 @@ def check(item: dict) -> tuple[list[str], list[str]]:
             fails.append("G3: 선다형 발문은 '…것은?'처럼 물음표로 끝나는 질문이어야 함")
 
     for where, text in _texts(item):
-        if _LEAK.search(_QUOTED.sub("", text or "")):
+        t2 = _QUOTED.sub("", text or "")
+        if _LEAK.search(t2) and not _leak_in_source(t2, source_text):
             fails.append(f"G3: {where}에 '원고'·쪽수·절 번호 노출 — 학습자는 원고를 볼 수 없음")
             break
 

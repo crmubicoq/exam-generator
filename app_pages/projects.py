@@ -7,7 +7,7 @@ from exam_gen.store import (Project, delete_project, display_name, list_projects
                             restore_project, set_last_project)
 
 KIND = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제"}
-STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제",
+STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "hold": "보류", "deleted": "삭제",
              "prior": "기출"}
 
 ui.header("프로젝트 관리", "folder_managed", "과정(프로젝트)별로 언제 만들고 고쳤는지, 어떤 AI로 출제했는지 확인하고 "

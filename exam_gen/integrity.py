@@ -49,12 +49,21 @@ def has_override(item: dict) -> bool:
     return bool(o) and o.get("hash") == content_hash(item) and not v.get("fails")
 
 
+def has_judgment(item: dict) -> bool:
+    """검수자 판단 승인(담당부서 피드백 2026-11-13 #1): 승인을 막는 사유가 있어도 검수자가 사유를 확인하고 책임지고 승인한 기록이
+    지금 내용 그대로에 대해 있다. 내용을 고치면 해시가 달라져 무효가 된다."""
+    j = (item.get("validation") or {}).get("judgment") or {}
+    return bool(j) and j.get("hash") == content_hash(item)
+
+
 def needs_evidence_confirm(item: dict) -> bool:
     return any((e.get("match") or {}).get("level") == "L1" for e in item.get("evidence") or [])
 
 
 def block_reasons(item: dict) -> list[str]:
     """승인 전 확인: 비어 있으면 승인 가능."""
+    if has_judgment(item):
+        return []
     out = []
     v = item.get("validation") or {}
     if v.get("fails"):
@@ -68,11 +77,15 @@ def block_reasons(item: dict) -> list[str]:
 
 def is_exportable(item: dict) -> bool:
     appr = item.get("approved") or {}
+    if item.get("status") == "approved" and has_judgment(item) and appr.get("hash") == content_hash(item):
+        return True
     return (item.get("status") == "approved" and (is_verified(item) or has_override(item)) and bool(item.get("source_pages"))
             and appr.get("hash") == content_hash(item)
             and (not needs_evidence_confirm(item) or appr.get("evidence_confirmed")))
 
 
 def is_draftable(item: dict) -> bool:
+    if has_judgment(item) and item.get("status") in ("approved", "auto_pass", "warn", "hold"):
+        return True
     return (item.get("status") in ("approved", "auto_pass", "warn") and (is_verified(item) or has_override(item))
             and bool(item.get("source_pages")))

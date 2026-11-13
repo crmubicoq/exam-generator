@@ -4,7 +4,8 @@
   1) 최종 제출 시트(양식 시트 이름 그대로): 승인 문항만, 수정 표시 없음
   2) '검수용(수정표시)' 시트 — 숨김: 삭제=회색, 수정=노란 셀+빨간 글씨, 수동 확인 포함
   3) '검증리포트' 시트: 분포·커버리지·관문 통계
-양식 오른쪽 숨김 열(R~Y): 문항키·난이도·근거 원문·회차·상태·검증 메모·근거PDF 라벨·허용 정답
+양식 밖 보이는 열(담당부서 피드백 2026-11-13 #8): C '출처 페이지'(양식에서는 숨김·'PPT'), Q 난이도, R 문항ID, S 출제 회차
+양식 오른쪽 숨김 열(T~Y): 표시 난이도·근거 원문·상태·검증 메모·근거PDF 라벨·허용 정답
 """
 from __future__ import annotations
 
@@ -22,13 +23,17 @@ from ..ingest.page_map import format_pages
 from ..plan.coverage import coverage_stats
 from . import export_log, numbering
 
-HIDDEN_COLS = ["문항키", "난이도", "근거 원문", "회차", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
-FIRST_HIDDEN = 18  # R
+EXTRA_COLS = ["문항ID", "출제 회차"]  # R·S — 보이는 열(기출로 다시 올리면 R열 문항ID로 이 프로젝트 문항을 알아본다)
+FIRST_EXTRA = 18  # R
+HIDDEN_COLS = ["표시 난이도", "근거 원문", "상태", "검증 메모", "근거PDF 라벨", "허용 정답"]
+FIRST_HIDDEN = FIRST_EXTRA + len(EXTRA_COLS)  # T
 GRAY = PatternFill("solid", fgColor="D9D9D9")
 PINK = PatternFill("solid", fgColor="FFD9D9")  # 최종 시트의 자동 검증 탈락(수동확인) 문항
 YELLOW = PatternFill("solid", fgColor="FFFF00")
 RED = Font(color="FF0000")
-STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "deleted": "삭제"}
+VIOLET = PatternFill("solid", fgColor="E6DDF5")  # 최종 시트의 보류 문항
+STATUS_KO = {"approved": "승인", "auto_pass": "자동통과", "warn": "경고", "manual": "수동확인", "hold": "보류", "deleted": "삭제"}
+KIND_KO = {"initial": "최초 출제", "additional": "추가 출제", "repair": "페이지 재출제", "revise": "원고 변경 처리"}
 
 
 def stem_text(item: dict, prefix: str = "") -> str:
@@ -52,7 +57,7 @@ def answer_cell(item: dict):
 
 
 def page_cell(project, item: dict) -> str:
-    """'PPT' 열: 근거 원고의 책 쪽수(슬라이드 번호). 근거가 여러 원고에 걸치면 원고 파일명별로 나눠 적는다."""
+    """C열 '출처 페이지'(양식 원래 이름 'PPT'): 근거 원고의 책 쪽수(슬라이드 번호). 근거가 여러 원고에 걸치면 원고 파일명별로 나눠 적는다."""
     gs = item.get("source_pages") or ([item["page"]] if item.get("page") is not None else [])
     if not gs:
         return ""
@@ -94,16 +99,31 @@ def _scoring(item: dict, opts: dict) -> str:
     return base
 
 
+def extra_values(item: dict, batch_label: dict) -> list:
+    return [item["key"], batch_label.get(item.get("batch"), item.get("batch"))]
+
+
+def _memo(item: dict) -> str:
+    v = item.get("validation", {})
+    head = []
+    if item.get("status") == "hold" and item.get("hold"):
+        h = item["hold"]
+        head.append(f"보류({h.get('kind')})" + (f": {h['memo']}" if h.get("memo") else ""))
+    j = v.get("judgment") or {}
+    if item.get("status") == "approved" and j and j.get("hash") == (item.get("approved") or {}).get("hash"):
+        head.append(f"검수자 판단 승인({j.get('by')})" + (f": {j['note']}" if j.get("note") else "")
+                    + (f" — 막혀 있던 사유: {' / '.join(j.get('reasons') or [])}" if j.get("reasons") else ""))
+    return "; ".join(head + list(dict.fromkeys(v.get("fails", []) + v.get("warnings", []))))[:2000]
+
+
 def hidden_values(project, item: dict) -> list:
     quotes = []
     for ev in item.get("evidence") or []:
         m = ev.get("match")
         if m:
             quotes.append(f"[p.{m['label']}·{ev.get('target')}·{'참' if ev.get('is_true') else '원문'}] {ev.get('quote', '')}")
-    v = item.get("validation", {})
-    memo = "; ".join(v.get("fails", []) + v.get("warnings", []))[:2000]
-    return [item["key"], item.get("difficulty"), "\n".join(quotes)[:4000], item.get("batch"),
-            STATUS_KO.get(item.get("status"), item.get("status")), memo, item.get("qlabel"),
+    return [item.get("difficulty"), "\n".join(quotes)[:4000],
+            STATUS_KO.get(item.get("status"), item.get("status")), _memo(item), item.get("qlabel"),
             "{^}".join(item.get("short_variants") or [])]
 
 
@@ -127,6 +147,16 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
     ws.cell(row=2, column=17, value="난이도\n(담당자 판정 우선)")._style = copy(head_style)  # Q열 — 양식(A~P) 밖
     ws.cell(row=3, column=17)._style = copy(sub_style)
     ws.column_dimensions["Q"].width = 12
+    # C열: 양식에서는 숨김·'PPT' — 출처 페이지로 보이게(담당부서 확인: 열 추가·제목 변경 문제없음, 2026-11-13)
+    ws.cell(row=2, column=3, value="출처 페이지")
+    ws.column_dimensions["C"].hidden = False
+    ws.column_dimensions["C"].width = 10
+    for i, name in enumerate(EXTRA_COLS):
+        col = FIRST_EXTRA + i
+        ws.cell(row=2, column=col, value=name)._style = copy(head_style)
+        ws.cell(row=3, column=col)._style = copy(sub_style)
+        ws.column_dimensions[get_column_letter(col)].width = 12
+    batch_label = {b["batch"]: f"{b['batch']}회차 · {KIND_KO.get(b['kind'], b['kind'])}" for b in project.batches()}
     for i, name in enumerate(HIDDEN_COLS):
         col = FIRST_HIDDEN + i
         ws.cell(row=2, column=col, value=name)._style = copy(head_style)
@@ -137,12 +167,14 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
 
     # 1) 최종 시트
     for r, it in enumerate(final, start=4):
-        _write_row(ws, r, row_values(project, it, opts) + hidden_values(project, it), styles, height)
-        if it.get("status") == "manual":
+        _write_row(ws, r, row_values(project, it, opts) + extra_values(it, batch_label) + hidden_values(project, it), styles, height)
+        if it.get("status") in ("manual", "hold"):
             for c in range(1, 14):
-                ws.cell(row=r, column=c).fill = PINK
+                ws.cell(row=r, column=c).fill = PINK if it["status"] == "manual" else VIOLET
     for i in range(len(HIDDEN_COLS)):
         ws.column_dimensions[get_column_letter(FIRST_HIDDEN + i)].hidden = True
+    if any(it.get("status") == "hold" for it in final):
+        ws["A1"] = f"{ws['A1'].value or ''}  ※ 연한 보라 행은 보류 문항(숨김 열 '검증 메모'에 보류 사유)"
     if scope == "all":
         ws["A1"] = f"{ws['A1'].value or ''}  ※ 검수 전 문항 포함 — 연한 빨강 행은 자동 검증 탈락(수동확인) 문항"
     elif scope == "passed":
@@ -153,7 +185,7 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
     others = numbering.number(others, "continuous")
     r = 4
     for it in final + others:
-        vals = row_values(project, it, opts) + hidden_values(project, it)
+        vals = row_values(project, it, opts) + extra_values(it, batch_label) + hidden_values(project, it)
         if it["key"] not in no_by_key:
             vals[3] = None
         _write_row(review, r, vals, styles, height)

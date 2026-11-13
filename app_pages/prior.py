@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from exam_gen import ui
+from exam_gen import review_ops, ui
 from exam_gen.ingest import prior_items as P
 from exam_gen.llm import settings as llm_settings
 from exam_gen.llm.client import LLMClient
@@ -45,6 +45,22 @@ with st.container(border=True):
             r = P.relink(p)
             st.toast(f"다시 연결했습니다: {r['linked']}/{r['total']}문항 연결, {r['changed']}문항 바뀜", icon=":material/link:")
             st.rerun()
+        own = P.registered_self_copies(p)
+        if own:
+            with st.container(border=True):
+                st.warning(f"**이 프로젝트에서 출력한 문항과 똑같은 기출이 {len(own)}문항 있습니다.** 이 프로그램에서 내려받은 엑셀을 "
+                           "같은 프로젝트의 기출로 다시 올린 경우입니다. 그러면 문항이 자기 자신과 100% 중복(유사도 1.0)으로 잡혀 "
+                           "승인이 막힙니다. 이 프로젝트 문항은 이미 중복 검사에 쓰이므로 기출로 따로 올릴 필요가 없습니다.",
+                           icon=":material/content_copy:")
+                st.caption("아래 버튼을 누르면 이 기출만 지우고, 그 때문에 막혔던 문항을 AI 없이 다시 확인합니다. "
+                           "다른 기출과 이미 만든 문항은 바뀌지 않습니다.")
+                if st.button(f"똑같은 기출 {len(own)}문항 지우고 다시 확인", icon=":material/cleaning_services:"):
+                    p.delete_items([it["key"] for it in own])
+                    r = review_ops.refresh_rules(p)
+                    p.log("prior_self_copies_removed", {"n": len(own), **r})
+                    st.toast(f"기출 {len(own)}문항을 지웠습니다. 문항 {r['checked']}개를 다시 확인했고 {r['released']}개가 풀렸습니다.",
+                             icon=":material/check:")
+                    st.rerun()
         c1, c2 = st.columns([3, 1])
         rm = c1.selectbox("지울 기출 파일", list(by_src), label_visibility="collapsed")
         if c2.button("이 파일의 기출 지우기", icon=":material/delete:", width="stretch"):
@@ -121,11 +137,22 @@ if state.get("items") is not None:
                      "answer": str(r["정답"] or "").strip(),
                      "short_variants": [v.strip() for v in str(r["유사답변(쉼표)"] or "").split(",") if v.strip()],
                      "explanation": str(r["해설"] or "").strip()})
+    _new, _own = P.split_self_copies(p, keep)
+    if _own:
+        st.info(f"**{len(_own)}문항은 이 프로젝트에 이미 있는 문항이라 건너뜁니다**(이 프로그램에서 내려받은 엑셀을 다시 올린 경우). "
+                "이 프로젝트 문항은 이미 중복 검사에 쓰입니다. 다른 과정·이전 회차 문항만 기출로 저장됩니다.", icon=":material/content_copy:")
+    keep = _new
     c1, c2 = st.columns([1, 3])
     if c1.button(f"기출 {len(keep)}문항 저장", type="primary", disabled=not keep, icon=":material/save:"):
         n = P.save(p, keep, state["name"])
         st.session_state.pop("prior_import", None)
-        st.toast(f"기출 {n}문항을 저장했습니다(같은 발문은 한 번만).", icon=":material/check:")
+        # 이미 만든 문항(승인 전)을 새 기출과 바로 비교한다 — 나중에 AI 재검증 때 갑자기 중복으로 잡히지 않게(피드백 #5)
+        before = sum(1 for it in p.items() if it["status"] == "manual")
+        review_ops.refresh_rules(p)
+        dup = max(0, sum(1 for it in p.items() if it["status"] == "manual") - before)
+        st.toast(f"기출 {n}문항을 저장했습니다(같은 발문은 한 번만)."
+                 + (f" 이미 만든 문항 중 {dup}개가 새 기출과 겹쳐 '확인 필요'로 옮겼습니다." if dup else ""),
+                 icon=":material/check:")
         st.rerun()
     c2.caption("저장한 기출은 원고에서 가장 관련 있는 쪽에 자동으로 연결됩니다.")
 

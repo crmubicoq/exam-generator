@@ -185,10 +185,13 @@ def test_excel_template_header_preserved(sample_project, tmp_path):
     ws = openpyxl.load_workbook(r["path"]).worksheets[0]
     tpl = openpyxl.load_workbook(TEMPLATE_XLSX).worksheets[0]
     assert {str(x) for x in ws.merged_cells.ranges} == {str(x) for x in tpl.merged_cells.ranges}
-    assert [ws.cell(2, c).value for c in range(1, 17)] == [tpl.cell(2, c).value for c in range(1, 17)]
+    # C열만 '출처 페이지'로 바꿔 보이게 한다(담당부서 확인 2026-11-13). 나머지 양식 머리글은 그대로
+    assert [ws.cell(2, c).value for c in range(1, 17) if c != 3] == [tpl.cell(2, c).value for c in range(1, 17) if c != 3]
+    assert ws.cell(2, 3).value == "출처 페이지" and not ws.column_dimensions["C"].hidden
     assert [ws.cell(4, c).value for c in (1, 2, 3, 4, 6, 7, 8, 9, 10)] == [1, "진위형", "18", 1, "O", "X", None, None, 1]
     assert ws.cell(5, 2).value == "단답형" and ws.cell(5, 6).value is None and ws.cell(5, 10).value == "후기 고령기"
-    assert ws.column_dimensions["R"].hidden
+    assert ws.cell(2, 18).value == "문항ID" and ws.cell(4, 18).value == "K00001" and not ws.column_dimensions["R"].hidden
+    assert ws.cell(2, 19).value == "출제 회차" and ws.column_dimensions["T"].hidden
 
 
 # ---------- 파이프라인(모의 공급자) + 근거PDF ----------
@@ -391,4 +394,4 @@ def test_skip_reverify_override_flow(sample_project, tmp_path):
     assert not integrity.is_exportable(p.item(key))
     # 검수 남은 문항 수
     pc = review_ops.pending_counts(p.items())
-    assert set(pc) == {"manual", "warn", "auto_pass"} and sum(pc.values()) >= 1
+    assert set(pc) == {"manual", "warn", "auto_pass", "hold"} and sum(pc.values()) >= 1

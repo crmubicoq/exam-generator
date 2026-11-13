@@ -267,7 +267,9 @@ def check_item(pages: list[dict], item: dict) -> tuple[list[str], list[str]]:
         if q:
             hint = resolve_hint(pages, ev.get("page_label"), slot_g)
             ev["match"] = locate(pages, q, hint)
-        by_target.setdefault(str(ev.get("target")), []).append(ev)
+        # 단답형은 근거 대상이 정답(A) 하나뿐이다 — 검수자가 대상 칸을 '정답'·'1' 등으로 적어도 A로 본다(담당부서 피드백 2026-11-13 #3)
+        tgt = "A" if item.get("type") == "short" else str(ev.get("target"))
+        by_target.setdefault(tgt, []).append(ev)
 
     for target in required_targets(item):
         lst = by_target.get(target, [])
@@ -289,14 +291,19 @@ def check_item(pages: list[dict], item: dict) -> tuple[list[str], list[str]]:
             page_nums = numbers_in(" ".join(l["text"] for l in pages[ev["match"]["g"]]["lines"] if not l["margin"]))
             missing = numbers_in(stmt) - numbers_in(ev["quote"]) - in_stem - page_nums
             if missing:
-                fails.append(f"G2: [{ev.get('target')}] 참 진술의 수치 {sorted(missing)}가 근거에 없음")
+                fails.append(f"G2: [{ev.get('target')}] 참 진술의 수치 {', '.join(sorted(missing))}이(가) 근거 원고 쪽에 없음 "
+                             f"— 진술: \"{stmt[:50]}\"")
 
     if item["type"] == "short":
-        ans = normalize(item.get("answer", ""))
-        quotes = normalize(" ".join(e.get("quote", "") for e in by_target.get("A", [])))
-        if ans and ans not in quotes:
-            fails.append("G2: 단답형 정답어가 근거 인용문에 없음")
+        # 정답 또는 유사답변 중 하나가 정답 근거 인용문에 글자 그대로(띄어쓰기·문장부호 무시) 있으면 통과
+        cands = [normalize(a) for a in [item.get("answer", ""), *(item.get("short_variants") or [])] if normalize(a)]
+        raw = " ".join(e.get("quote", "") for e in by_target.get("A", []))
+        quotes = normalize(raw)
+        if cands and quotes and not any(a in quotes for a in cands):
+            fails.append(f"G2: 단답형 정답 '{item.get('answer', '')}'(유사답변 포함)이 정답 근거 인용문에 글자 그대로 없음 — "
+                         f"인용문: \"{raw.strip()[:60]}\"")
 
+    fails, warns = list(dict.fromkeys(fails)), list(dict.fromkeys(warns))  # 같은 사유는 한 번만(피드백 #9)
     matched = [e["match"] for e in evs if e.get("match")]
     item["source_pages"] = sorted({m["g"] for m in matched})
     item["evidence_level"] = ("L2" if matched and all(m["level"] == "L2" for m in matched)

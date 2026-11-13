@@ -24,7 +24,7 @@ with st.container(border=True):
     st.markdown("##### :material/search: 문항 찾기")
     t1, t2 = st.tabs(["문항 내용·문항키로 찾기", "출력물의 문항번호로 찾기"])
     with t1:
-        st.caption("이의신청서에 적힌 **문제 문장 일부**를 붙여넣거나 **문항키**(예: K00012, 엑셀 숨김 R열)를 입력합니다. "
+        st.caption("이의신청서에 적힌 **문제 문장 일부**를 붙여넣거나 **문항ID(문항키)**(예: K00012, 엑셀 R열)를 입력합니다. "
                    "띄어쓰기·문장부호는 무시하고, 출력한 뒤 고친 문항은 출력 당시 내용으로도 찾습니다.")
         c1, c2 = st.columns([3, 2])
         query = c1.text_area("찾을 내용", key="appeal_q", height=90,

@@ -46,6 +46,23 @@ def allocate(pages: list[dict], total: int, existing: dict[int, int] | None = No
     return out
 
 
+def repair_alloc(pages: list[dict], total: int, existing: dict[int, int], max_existing: int = 0) -> dict[int, int]:
+    """페이지 재출제 자동 배정(담당부서 피드백 2026-11-13 #6): 기존 문항이 max_existing개 이하인 페이지에만,
+    문항이 적은 페이지부터(같으면 글자 수가 많은 페이지부터) 한 문항씩 돌아가며 배정한다."""
+    cand = [p for p in pages if not p["excluded"] and existing.get(p["g"], 0) <= max_existing]
+    if not cand or total <= 0:
+        return {}
+    cand.sort(key=lambda p: (existing.get(p["g"], 0), -p["chars"], p["g"]))
+    out: dict[int, int] = {}
+    i = 0
+    while total > 0:
+        p = cand[i % len(cand)]
+        out[p["g"]] = out.get(p["g"], 0) + 1
+        total -= 1
+        i += 1
+    return out
+
+
 def _spread(elig: list[dict], total: int) -> dict[int, int]:
     """문항 < 페이지: 페이지 순서대로 누적 글자 수를 total등분한 지점의 페이지를 고른다(계통 표집)."""
     elig = sorted(elig, key=lambda p: p["g"])

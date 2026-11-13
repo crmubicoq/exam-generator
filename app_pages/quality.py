@@ -40,7 +40,11 @@ if not cnt["accepted"]:
 # ---------- 종합 ----------
 bad = [k for k, g in r["grades"].items() if g in ("C", "D")]
 with st.container(border=True):
-    st.markdown(f"#### :material/summarize: 종합 — 통과 {cnt['accepted']}문항 · 수동확인 {cnt['manual']} · 승인 {cnt['approved']}")
+    st.markdown(f"#### :material/summarize: 종합 — 통과 {cnt['accepted']}문항 · 수동확인 {cnt['manual']} · 승인 {cnt['approved']}"
+                + (f" · 보류 {cnt['hold']}" if cnt.get("hold") else ""))
+    if cnt.get("judgment"):
+        st.caption(f":material/how_to_reg: 승인 중 **검수자 판단 승인 {cnt['judgment']}문항** — 자동 검사·AI 검증 사유가 있었지만 "
+                   "검수자가 확인하고 승인한 문항입니다. 사유는 검수 화면과 엑셀 '검증 메모'에서 봅니다.")
     if not bad:
         st.success("모든 항목이 B 이상입니다. 검수 화면에서 확인하고 승인하면 됩니다.", icon=":material/check_circle:")
     else:

@@ -78,9 +78,9 @@ with st.expander("최종 문항 자동 선정 — 여유분까지 출제한 문�
 
 # ---------- 출력 설정 ----------
 with st.container(border=True):
-    m = st.columns(5)
+    m = st.columns(6)
     for col, (label, key) in zip(m, [("승인", "approved"), ("자동통과", "auto_pass"), ("경고", "warn"),
-                                     ("수동확인", "manual"), ("삭제", "deleted")]):
+                                     ("수동확인", "manual"), ("보류", "hold"), ("삭제", "deleted")]):
         col.metric(label, c.get(key, 0))
     s1, s2 = st.columns([3, 2])
     # 출력 대상에 따라 범위별 문항 수가 달라지므로 먼저 그린다(화면 배치는 오른쪽)
@@ -102,6 +102,10 @@ with st.container(border=True):
         return f"{b}회차 · {KIND.get(info['kind'], info['kind'])} · {day} · {n}문항"
 
     with s1:
+        inc_hold = st.toggle(f"보류 문항 포함 ({c.get('hold', 0)}문항)", value=True, disabled=not c.get("hold"),
+                             help="검수 화면에서 '보류'로 둔 문항입니다. 포함하면 엑셀에 연한 보라 행으로 표시됩니다.")
+        if not inc_hold:
+            items = [it for it in items if it.get("status") != "hold"]
         batch = st.selectbox("출력 범위", [None] + [b["batch"] for b in batches], format_func=_scope_label)
         st.caption("**회차**는 '출제 시작'을 한 번 누른 단위입니다(처음 출제 = 1회차, 이후 추가 출제마다 2, 3 …). "
                    "보통은 **전체**를 고르고, 추가 출제분만 따로 납품할 때 해당 회차를 고릅니다.")

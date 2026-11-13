@@ -44,6 +44,7 @@ def is_template_excel(path: Path) -> bool:
 
 
 _STMT = re.compile(r"^\s*([ㄱㄴㄷㄹㅁ])\s*[.)]\s*(.+)$")
+_KEY = re.compile(r"^K\d{5}$")  # 이 도구가 출력한 엑셀의 문항ID(문항키) 열
 _VAR = re.compile(r"\s*\((?:유사답변|허용 답안)\s*:\s*([^)]*)\)\s*$")
 
 
@@ -68,7 +69,8 @@ def parse_template_excel(path: Path) -> list[dict]:
         elif t == "short" and (m := _VAR.search(ans)):
             variants = [v.strip() for v in m.group(1).split(",") if v.strip()]
             ans = _VAR.sub("", ans).strip()
-        out.append({"type": t, "stem": stem, "statements": stmts,
+        key = str(cells[17] or "").strip() if len(cells) > 17 else ""
+        out.append({"type": t, "stem": stem, "statements": stmts, "source_key": key if _KEY.match(key) else "",
                     "choices": [str(c).strip() for c in cells[5:9] if c not in (None, "")] if t == "mcq" else [],
                     "answer": ans, "short_variants": variants, "explanation": str(cells[10] or "").strip(),
                     "chasi_given": cells[0], "row": r})
@@ -153,8 +155,10 @@ def _tokens(text: str) -> set[str]:
 
 def best_page(project, item: dict) -> int | None:
     """문제·보기·정답 단어가 가장 많이 겹치는 출제 대상 쪽(겹침이 너무 적으면 None)."""
-    q = _tokens(" ".join([item.get("stem", ""), *item.get("statements", []), *item.get("choices", []),
-                          item.get("answer", ""), item.get("explanation", "")]))
+    # 저장 전(문자열 목록)·저장 후({"text": …} 목록) 둘 다 받는다 — 객관식 기출을 먼저 올린 뒤 원고를 등록하면 오류가 났다
+    txt = lambda xs: [x.get("text", "") if isinstance(x, dict) else str(x) for x in xs or []]  # noqa: E731
+    q = _tokens(" ".join([item.get("stem", ""), *txt(item.get("statements")), *txt(item.get("choices")),
+                          str(item.get("answer", "")), item.get("explanation", "") or ""]))
     if not q:
         return None
     best, score = None, 0.0
@@ -197,11 +201,43 @@ def problems(item: dict) -> list[str]:
     return out
 
 
+def _sig(it: dict) -> tuple[str, str]:
+    # 출력할 때 붙인 '[과목명] ' 머리는 빼고 비교한다
+    stem = re.sub(r"^\s*\[[^\]\n]{1,40}\]\s*", "", it.get("stem", "") or "")
+    return normalize(stem), normalize(str(it.get("answer", "")))
+
+
+def split_self_copies(project, items: list[dict]) -> tuple[list[dict], list[dict]]:
+    """이 프로젝트에서 출력한 엑셀을 기출로 다시 올린 문항을 가려낸다(담당부서 답변 2026-11-13 #5).
+    문항ID(K…)가 이 프로젝트 문항이거나, 발문·정답이 이 프로젝트 문항과 같으면 '이미 있는 문항'이다.
+    반환: (새 기출, 이미 이 프로젝트에 있는 문항)"""
+    own = [it for it in project.items(status=["approved", "auto_pass", "warn", "manual", "hold", "deleted"])]
+    keys = {it["key"] for it in own}
+    sigs = {_sig(it) for it in own}
+    new, dup = [], []
+    for it in items:
+        (dup if (it.get("source_key") in keys or _sig(it) in sigs) else new).append(it)
+    return new, dup
+
+
+def registered_self_copies(project) -> list[dict]:
+    """이미 등록된 기출 중 이 프로젝트 문항과 발문·정답이 같은 것(자기 자신과 100% 중복으로 잡히는 원인)."""
+    own = {_sig(it) for it in project.items(status=["approved", "auto_pass", "warn", "manual", "hold", "deleted"])}
+    return [it for it in project.items(status=["prior"]) if _sig(it) in own]
+
+
+def _next_p(project) -> int:
+    nums = [int(it["key"][1:]) for it in project.items(status=["prior"]) if it["key"][1:].isdigit()]
+    return max(nums, default=0)
+
+
 def save(project, items: list[dict], source_name: str) -> int:
-    """기출 문항 저장(상태 prior, 키 P00001…). 반환: 저장 수."""
+    """기출 문항 저장(상태 prior, 키 P00001…). 이 프로젝트에 이미 있는 문항(출력 엑셀을 다시 올린 경우)은 건너뛴다.
+    반환: 저장 수."""
     existing = project.items(status=["prior"])
     seen = {normalize(it.get("stem", "")) for it in existing}
-    n = len(existing)
+    items, own = split_self_copies(project, items)
+    n = _next_p(project)  # 행 수가 아니라 가장 큰 번호 다음(기출 파일을 지운 뒤 키가 겹치지 않게)
     saved = 0
     for it in items:
         if normalize(it.get("stem", "")) in seen:
@@ -220,5 +256,5 @@ def save(project, items: list[dict], source_name: str) -> int:
                 "validation": {"fails": [], "warnings": []}}
         project.save_item(item, "prior_import", {"source": source_name})
         saved += 1
-    project.log("prior_import", {"source": source_name, "saved": saved})
+    project.log("prior_import", {"source": source_name, "saved": saved, "skipped_own": len(own)})
     return saved

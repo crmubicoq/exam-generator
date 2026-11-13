@@ -17,7 +17,8 @@ SCOPES = {"all": "전체(검수 없이, 탈락 문항 포함)", "passed": "자�
 
 def select(items: list[dict], draft: bool = False, batch: int | None = None, scope: str | None = None) -> list[dict]:
     """scope
-    - all: 삭제·기출을 뺀 모든 문항(자동통과·경고·수동확인·승인)
+    - all: 삭제·기출을 뺀 모든 문항(자동통과·경고·수동확인·보류·승인)
+    보류(hold)는 어느 대상이든 함께 나간다(빼려면 items에서 미리 뺀다)
     - passed: 현재 내용이 G1~G6을 통과한 문항(승인 전 포함)
     - approved: 승인 + 현재 내용 검증·승인 해시 일치(integrity.is_exportable)
     scope를 주지 않으면 예전 방식(draft → passed, 아니면 approved)."""
@@ -29,6 +30,9 @@ def select(items: list[dict], draft: bool = False, batch: int | None = None, sco
     else:
         ok = integrity.is_draftable if scope == "passed" else integrity.is_exportable
         out = [it for it in items if ok(it)]
+        # 보류 문항은 출력 대상과 상관없이 넣는다 — 빼려면 부르는 쪽이 items에서 미리 뺀다(출력 화면 '보류 문항 포함')
+        have = {it["key"] for it in out}
+        out += [it for it in items if it.get("status") == "hold" and it["key"] not in have]
     if batch is not None:
         out = [it for it in out if it.get("batch") == batch]
     return out

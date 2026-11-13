@@ -64,7 +64,7 @@ class Pipeline:
         self.meta = project.meta
         # G6 비교 대상은 채택된 문항만 (수동확인·삭제 후보 제외, Codex C7)
         # 기출(prior)도 중복 비교·회피 목록에 넣는다 — 이미 출제·서비스한 문항을 다시 내지 않게(담당자 협의 2026-10-23)
-        self.existing = project.items(status=["approved", "auto_pass", "warn", "prior"])
+        self.existing = project.items(status=["approved", "auto_pass", "warn", "hold", "prior"])
         for it in self.existing:
             it["_tokens"] = dedup.tokens(it)
         self.page_errors: list[int] = []
@@ -368,7 +368,7 @@ class Pipeline:
                 with self.lock:
                     self.prog["first_try"]["items"] += 1
                     self.prog["first_try"]["g2_pass"] += 0 if ef else 1
-        rf, rw = rules.check(item)
+        rf, rw = rules.check(item, self.p.item_source_text(item))
         return fails + rf, warns + rw
 
     def _llm_gates(self, cands, feedback, last, failed):
@@ -405,6 +405,10 @@ class Pipeline:
                 # 명확한 정답 단서는 경고로 쌓지 않고 한 번 다시 출제한다(Codex 시험 3 검수). 두 번째는 경고로 통과
                 self.cue_retried.add(s["sid"])
                 f = [f"{cue[0]} — 단서를 없애 다시 출제(보기 4개의 어조·형식·종류를 맞추고, 차이를 조건·경로·역할에 둘 것)"]
+            gap = [x for x in w if x.startswith(review_llm.DIFF_GAP_WARN)]
+            if not f and gap and item["validation"]["attempts"] <= self.opts.get("max_retries", 3):
+                # 난이도가 두 단계 이상 다르면 재출제 기회가 남아 있는 동안 다시 낸다. 마지막 시도는 경고로 통과(승인 막지 않음)
+                f = [f"{gap[0].split(' — ')[0]} — 슬롯 난이도에 맞게 다시 출제"]
             if f:
                 self._fail(item, s, f, feedback, last, failed)
             else:

@@ -2,7 +2,7 @@
 
 찾는 방법
 - 문항 내용 일부 붙여넣기: 발문·진술·보기·정답·해설을 띄어쓰기·문장부호 없이 비교한다(현재 내용 + 출력 당시 스냅숏).
-- 문항키(K00012): 엑셀 숨김 R열 — 서비스 시스템에 함께 보관하면 가장 빠르다.
+- 문항키(K00012): 엑셀 R열 '문항ID' — 서비스 시스템에 함께 보관하면 가장 빠르다.
 - 출력 이력 + 문항번호: '그 파일의 7번'.
 처리 기록은 프로젝트 runs/appeals.jsonl과 문항 이벤트에 남는다.
 """
@@ -26,7 +26,7 @@ from .validate import pool_review
 OUTCOMES = {"accept": "정답 인정(이의 기각 아님 — 신청자 답도 정답)", "multi": "복수 정답 인정",
             "revise": "문항 수정", "discard": "문항 폐기", "reject": "기각(원래 정답 유지)"}
 OUTCOME_SHORT = {"accept": "정답 인정", "multi": "복수 정답", "revise": "문항 수정", "discard": "문항 폐기", "reject": "기각"}
-ALL_STATUS = ["approved", "auto_pass", "warn", "manual", "deleted", "prior"]
+ALL_STATUS = ["approved", "auto_pass", "warn", "manual", "hold", "deleted", "prior"]
 KEY_RE = re.compile(r"^[KP]\d{5}$")
 MIN_SCORE = 0.5
 VERDICT_KO = {"contradiction": "원고와 모순(오답 확실)", "compatible": "원고와 함께 성립 가능", "not_stated": "원고에 없음",

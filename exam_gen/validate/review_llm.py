@@ -62,13 +62,23 @@ def review(client, settings, project, items: list[dict], objectives: str = "") -
             elif want in LEVELS:
                 gap = abs(LEVELS.index(want) - LEVELS.index(got_lv))
                 if gap >= 2:
-                    fails.append(f"G5[난이도] 표시 '{want}'인데 실제 '{got_lv}' 수준 — 슬롯 난이도에 맞게 다시 출제")
+                    # 난이도 차이는 문항 오류가 아니므로 승인을 막지 않는다(담당부서 답변 2026-11-13 #3). 출제 중에는
+                    # generator가 이 경고를 보고 재출제 기회가 남아 있으면 다시 낸다(DIFF_GAP_WARN)
+                    warns.append(f"{DIFF_GAP_WARN} 표시 '{want}'인데 AI 판정 '{got_lv}' 수준 — 참고(승인은 막지 않음)")
                 elif gap == 1:
                     warns.append(f"G5[난이도] 표시 '{want}' / 검수 판정 '{got_lv}'")
             if (fails or warns) and r.get("suggestion"):
                 warns.append(f"G5 수정안: {r['suggestion'][:300]}")
         verdicts[i] = (fails, warns, r)
     return verdicts
+
+
+DIFF_GAP_WARN = "G5[난이도 두 단계 차이]"
+DIFF_GAP_FAIL = "G5[난이도] 표시"  # v1.1.x까지 실패로 저장된 난이도 차이(이제는 경고로 옮긴다)
+
+
+def is_difficulty_only(msg: str) -> bool:
+    return msg.startswith((DIFF_GAP_WARN, DIFF_GAP_FAIL)) and ("실제" in msg or "AI 판정" in msg) and "누락" not in msg
 
 
 def _norm_target(t) -> str:
@@ -99,7 +109,7 @@ def relabel_difficulty(item: dict) -> None:
     """G5 판정 난이도가 표시와 한 단계 다르면 그 난이도로 매긴다. 슬롯 목표는 difficulty_target에 남긴다."""
     item["difficulty_target"] = item.get("difficulty_target") or item["slot"]["difficulty"]
     lv = (item["validation"].get("G5") or {}).get("assessed_difficulty")
-    warns = [w for w in item["validation"].get("warnings", []) if not w.startswith(("G5[난이도] 표시", "난이도 재분류"))]
+    warns = [w for w in item["validation"].get("warnings", []) if not w.startswith(("G5[난이도] 표시", DIFF_GAP_WARN, "난이도 재분류"))]
     item["difficulty"] = lv if lv in LEVELS else item["difficulty_target"]
     human = (item.get("human_difficulty") or {}).get("level")
     if human in LEVELS:  # 담당자가 판정한 난이도가 AI 판정보다 우선한다

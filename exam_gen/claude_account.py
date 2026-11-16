@@ -9,11 +9,28 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 PLAN_KO = {"max": "Max", "pro": "Pro", "team": "Team", "enterprise": "Enterprise", "free": "무료"}
+
+# 구독 로그인 대신 다른 인증·서버로 바꾸는 환경변수(2026-11-16 실측: ANTHROPIC_API_KEY가 있으면 로그인 상태여도
+# 'API 키 출처: ANTHROPIC_API_KEY'로 잡혀 API 키로 과금될 수 있고, ANTHROPIC_AUTH_TOKEN이 있으면 로그인 방식이 바뀐다).
+# 구독 출제·계정 확인·로그인 창에서는 빈 값으로 덮는다(빈 값이면 Claude 프로그램이 '없음'으로 본다 — 실측).
+OVERRIDE_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY")
+
+
+def ignored_env() -> list[str]:
+    """이 PC에 설정돼 있지만 구독 출제에서는 쓰지 않는 환경변수 이름(값은 보지 않는다)."""
+    return [k for k in OVERRIDE_ENV if os.environ.get(k)]
+
+
+def subscription_env() -> dict[str, str]:
+    """Claude 프로그램에 넘길 덮어쓰기 값: 설정된 인증·서버 변수를 빈 값으로."""
+    return {k: "" for k in ignored_env()}
 
 
 def claude_exe() -> Path | None:
@@ -26,7 +43,8 @@ def _run(args: list[str], timeout: float = 30) -> subprocess.CompletedProcess:
     if not exe:
         raise RuntimeError("Claude 프로그램을 찾지 못했습니다. 설치 폴더가 맞는지 확인하세요.")
     return subprocess.run([str(exe), *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                          timeout=timeout, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                          env={**os.environ, **subscription_env()})
 
 
 def parse_status(text: str) -> dict:
@@ -62,6 +80,7 @@ def login_script(exe: Path) -> str:
         "@echo off", "chcp 65001 > nul", "title Claude 계정 로그인", "echo.",
         "echo  브라우저가 열리면 사용할 Claude 계정으로 로그인하고 승인하세요.",
         "echo  브라우저가 열리지 않으면 아래에 나오는 주소를 복사해 브라우저에 붙여 넣으세요.", "echo.",
+        *[f'set "{k}="' for k in OVERRIDE_ENV],  # 이 창에서만 API 키 등을 비운다(구독 계정으로 로그인)
         f"call {q} auth logout > nul 2>&1",
         f"call {q} auth login --claudeai",
         "echo.", "echo  끝났으면 이 창을 닫고, 대시보드에서 [계정 다시 확인]을 누르세요.", "pause", ""])

@@ -447,6 +447,10 @@ def claude_account_box():
     else:
         st.warning("Claude에 로그인되어 있지 않습니다. 아래 **다른 계정으로 로그인**을 눌러 로그인하세요."
                    + (f" ({a['error'][:80]})" if a.get("error") else ""), icon=":material/no_accounts:")
+    if CA.ignored_env():
+        st.info("이 PC에 **" + ", ".join(CA.ignored_env()) + "** 환경변수가 설정돼 있습니다. 구독 출제(Claude 구독 로그인)에서는 "
+                "이 값을 쓰지 않으므로 API 요금이 청구되지 않습니다. 위 로그인 계정의 구독 사용량만 씁니다.",
+                icon=":material/key_off:")
     st.caption("출제는 여기 보이는 계정의 구독 사용량을 씁니다. 다른 사람 계정으로 시험했다면 로그아웃한 뒤 이 PC를 쓸 사람의 계정으로 "
                "로그인하세요. **다른 계정으로 로그인**을 누르면 새 창과 브라우저가 열리고, 브라우저에서 계정으로 승인하면 됩니다. "
                "끝나면 **계정 다시 확인**을 누르세요.")

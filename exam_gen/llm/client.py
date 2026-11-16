@@ -150,7 +150,9 @@ class LLMClient:
     def _agent_sdk(self, system, user, schema, *, model, task, context):
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
 
+        from ..claude_account import subscription_env
         opts = ClaudeAgentOptions(
+            env=subscription_env(),  # PC의 ANTHROPIC_API_KEY 등으로 API 과금되지 않게 — 구독 로그인만 쓴다
             system_prompt=system, model=model, max_turns=4, setting_sources=[],
             allowed_tools=[], output_format={"type": "json_schema", "schema": schema},
             disallowed_tools=["Bash", "Write", "Edit", "Read", "Glob", "Grep", "WebFetch", "WebSearch",

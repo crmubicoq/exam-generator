@@ -18,6 +18,9 @@ if "%CLAUDE%"=="" (
   exit /b 1
 )
 
+rem 이 창에서만 API 키·인증 토큰·서버 주소 환경변수를 비운다 — 구독 계정으로 로그인·확인하고 API 요금이 나가지 않게(2026-11-16)
+for %%v in (ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_BASE_URL CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY) do set "%%v="
+
 echo.
 echo  (대시보드 사이드바 AI 설정의 [다른 계정으로 로그인]으로도 할 수 있습니다.)
 echo.

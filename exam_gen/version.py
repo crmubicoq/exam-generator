@@ -9,8 +9,8 @@
 """
 from __future__ import annotations
 
-APP_VERSION = "1.2.0"
-RELEASE_DATE = "2026-11-13"
+APP_VERSION = "1.3.0"
+RELEASE_DATE = "2026-11-24"
 
 
 def label() -> str:

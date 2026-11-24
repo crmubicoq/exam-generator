@@ -44,11 +44,9 @@ def pending_counts(items: list[dict]) -> dict[str, int]:
 def save_edit(project: Project, item: dict, note: str = "") -> dict:
     """사람이 고친 내용을 저장. 코드 관문을 다시 돌리고, 내용이 바뀌었으면 G4·G5 재검증 전 상태로 둔다."""
     prev = project.item(item["key"])
-    # 수정 메모는 문항에 보관해 다시 열어도 보이게 한다(담당부서 2차 피드백 #1). 비우고 저장하면 지운다.
-    if note:
-        item["review_note"] = {"text": note, "at": now()}
-    else:
-        item.pop("review_note", None)
+    # 수정 메모는 문항에 보관해 다시 열어도 보이게 한다(담당부서 2차 피드백 #1).
+    # 비우고 저장하면 빈 메모로 남긴다(이력의 예전 메모가 다시 나오지 않게 — current_note 참고).
+    item["review_note"] = {"text": note, "at": now()}
     changed = integrity.content_hash(prev) != integrity.content_hash(item)
     if not changed:
         return _save_unchanged(project, prev, item, note)
@@ -68,6 +66,17 @@ def save_edit(project: Project, item: dict, note: str = "") -> dict:
     else:
         item["status"] = "approved" if integrity.is_exportable(item) else "warn"
     return project.save_item(item, "human_edit", {"fails": fails, "note": note, "content_changed": changed})
+
+
+def current_note(item: dict) -> dict:
+    """지금 보여 줄 수정 메모 {"text", "at"}. v1.3.0 전에 적은 메모는 이력에만 있으므로, 보관된 메모가 없으면
+    이력의 마지막 메모를 쓴다. 비우고 저장한 문항은 빈 메모가 보관돼 예전 메모가 다시 나오지 않는다."""
+    if "review_note" in item:
+        return item["review_note"] or {}
+    for h in reversed(item.get("history") or []):
+        if h.get("action") in ("edit", "memo") and str(h.get("note") or "").strip():
+            return {"text": str(h["note"]).strip(), "at": h.get("at")}
+    return {}
 
 
 def _save_unchanged(project: Project, prev: dict, item: dict, note: str) -> dict:

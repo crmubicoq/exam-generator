@@ -252,7 +252,7 @@ with mid:
         _h = saved["hold"]
         st.info(f"**보류** — {_h.get('kind')}" + (f": {_h['memo']}" if _h.get("memo") else "")
                 + f" ({_h.get('by') or '이름 없음'}, {str(_h.get('at', ''))[:10]})", icon=":material/pause_circle:")
-    _rn = saved.get("review_note") or {}
+    _rn = review_ops.current_note(saved)
     if _rn.get("text"):  # 저장한 수정 메모(담당부서 2차 피드백 #1 — 다른 대기열에 다녀와도 남아 있게)
         st.info(f"**수정 메모** — {_rn['text']}" + (f" ({str(_rn.get('at', ''))[:16].replace('T', ' ')})" if _rn.get("at") else ""),
                 icon=":material/sticky_note_2:")
@@ -429,7 +429,7 @@ with mid:
         # 문항마다 메모 칸을 따로 둔다 — 같은 칸을 쓰면 다음 문항으로 넘어가도 이전 메모가 남았다(피드백 #4).
         # 저장한 메모는 문항에 보관하고 다시 열면 채워 보여 준다(2차 피드백 #1 — 다른 대기열에 다녀오면 사라졌다)
         _note_key = f"note_{saved['key']}"
-        note = st.text_input("수정 메모(선택)", value=(saved.get("review_note") or {}).get("text", ""), key=_note_key,
+        note = st.text_input("수정 메모(선택)", value=review_ops.current_note(saved).get("text", ""), key=_note_key,
                              help="이 문항에 남길 메모입니다. '수정 저장'을 눌러야 저장되고, 다른 대기열에 다녀와도 남아 있습니다. "
                                   "메모만 고치고 저장하면 문항 상태는 그대로입니다.")
         if st.button("수정 저장", icon=":material/save:"):

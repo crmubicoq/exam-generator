@@ -35,9 +35,17 @@ def test_memo_kept_and_memo_only_save_keeps_status():
     assert r["_memo_only"] and cur["status"] == "auto_pass" and integrity.is_verified(cur)
     assert cur["review_note"]["text"] == "test 메모"  # 다른 대기열에 다녀와도(다시 읽어도) 남아 있다
     assert cur["history"][-1]["action"] == "memo"
-    # 비우고 저장하면 지운다
+    # 비우고 저장하면 지운다(이력의 예전 메모도 다시 나오지 않는다)
     review_ops.save_edit(p, copy.deepcopy(cur), "")
-    assert "review_note" not in p.item(it["key"])
+    assert review_ops.current_note(p.item(it["key"])).get("text", "") == ""
+
+
+def test_memo_written_before_update_is_shown():
+    """v1.3.0 전에 적은 메모(이력에만 있음)도 메모 칸·문항 위쪽에 보인다."""
+    item = {"history": [{"action": "edit", "note": "예전 메모", "at": "2026-11-20T10:00"},
+                        {"action": "approve", "note": ""}]}
+    assert review_ops.current_note(item)["text"] == "예전 메모"
+    assert review_ops.current_note({**item, "review_note": {"text": "", "at": "x"}}) == {"text": "", "at": "x"}
 
 
 def test_memo_only_save_keeps_ai_fail_reason():

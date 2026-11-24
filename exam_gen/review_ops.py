@@ -44,8 +44,15 @@ def pending_counts(items: list[dict]) -> dict[str, int]:
 def save_edit(project: Project, item: dict, note: str = "") -> dict:
     """사람이 고친 내용을 저장. 코드 관문을 다시 돌리고, 내용이 바뀌었으면 G4·G5 재검증 전 상태로 둔다."""
     prev = project.item(item["key"])
-    fails, warns = revalidate_code(project, item)
+    # 수정 메모는 문항에 보관해 다시 열어도 보이게 한다(담당부서 2차 피드백 #1). 비우고 저장하면 지운다.
+    if note:
+        item["review_note"] = {"text": note, "at": now()}
+    else:
+        item.pop("review_note", None)
     changed = integrity.content_hash(prev) != integrity.content_hash(item)
+    if not changed:
+        return _save_unchanged(project, prev, item, note)
+    fails, warns = revalidate_code(project, item)
     item.setdefault("history", []).append({"at": now(), "action": "edit", "note": note,
                                            "before": {k: prev.get(k) for k in ("stem", "statements", "choices", "answer",
                                                                                 "short_variants", "explanation", "evidence")}})
@@ -61,6 +68,26 @@ def save_edit(project: Project, item: dict, note: str = "") -> dict:
     else:
         item["status"] = "approved" if integrity.is_exportable(item) else "warn"
     return project.save_item(item, "human_edit", {"fails": fails, "note": note, "content_changed": changed})
+
+
+def _save_unchanged(project: Project, prev: dict, item: dict, note: str) -> dict:
+    """문항 내용(발문·보기·정답·해설·근거 문장)은 그대로이고 메모·근거 쪽·함정 메모만 바뀐 저장.
+    상태·승인·AI 검증(G4·G5) 결과는 그대로 두고, 코드 관문만 다시 확인한다(근거 위치 갱신).
+    예전에는 이 경우에도 상태를 다시 정해 자동통과 문항이 '확인 필요'로 옮겨지고 AI 검증 실패 사유가 지워졌다."""
+    v = item.setdefault("validation", {})
+    before = list(v.get("fails") or [])
+    cf, cw = revalidate_code(project, item)
+    keep = [f for f in before if not f.startswith(("G1", "G2", "G3", "G6"))]
+    v["fails"] = list(dict.fromkeys(cf + keep))
+    v["warnings"] = list(dict.fromkeys([w for w in v.get("warnings", []) if not w.startswith(("G1", "G2", "G3", "G6"))] + cw))
+    if cf and item.get("status") in ("auto_pass", "warn", "approved"):
+        item["status"] = "manual"  # 근거 쪽 등을 고쳐 코드 검사에 걸리면 확인 필요로
+        item.pop("approved", None)
+    memo_only = (v["fails"] == before and item.get("status") == prev.get("status"))
+    item.setdefault("history", []).append({"at": now(), "action": "memo" if memo_only else "edit", "note": note})
+    saved = project.save_item(item, "human_memo" if memo_only else "human_edit",
+                              {"fails": v["fails"], "note": note, "content_changed": False})
+    return {**saved, "_memo_only": memo_only}
 
 
 def approve(project: Project, key: str, who: str = "", evidence_confirmed: bool = False) -> tuple[bool, list[str]]:

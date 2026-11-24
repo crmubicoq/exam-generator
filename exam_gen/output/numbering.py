@@ -1,6 +1,7 @@
 """출력용 번호 부여 — 엑셀과 근거PDF가 같은 번호를 쓰도록 한 곳에서 정한다.
 
-정렬: 차시 → 유형(선다·진위·단답, 양식 예시 순서) → 원고 페이지 → 문항 키
+정렬(프로젝트 옵션 order_by): 문항ID 오름차순(기본, 담당부서 2차 피드백 2026-11-24) 또는
+      양식 순 — 차시 → 유형(선다·진위·단답, 양식 예시 순서) → 원고 페이지 → 문항 키
 번호 방식: continuous(양식처럼 전체 연번) | per_type(지침처럼 유형별 1번부터)
 근거PDF 라벨은 항상 전체 연번 Q{n}을 쓴다(per_type이면 엑셀 숨김 열에 라벨을 함께 기록).
 """
@@ -38,9 +39,16 @@ def select(items: list[dict], draft: bool = False, batch: int | None = None, sco
     return out
 
 
-def number(items: list[dict], mode: str = "continuous") -> list[dict]:
+ORDERS = {"key": "문항ID 순 (K00001, K00002 …)", "form": "양식 순 (차시 → 유형 → 원고 쪽)"}
+
+
+def number(items: list[dict], mode: str = "continuous", order_by: str = "key") -> list[dict]:
+    """order_by: key(문항ID 오름차순 — 담당부서 2차 피드백 #3, 기본) | form(차시 → 유형 → 원고 쪽 → 문항ID)."""
     order = criteria()["type_order"]
-    srt = sorted(items, key=lambda it: (it.get("chasi") or 0, order.index(it["type"]), it.get("page") or 0, it["key"]))
+    if order_by == "form":
+        srt = sorted(items, key=lambda it: (it.get("chasi") or 0, order.index(it["type"]), it.get("page") or 0, it["key"]))
+    else:
+        srt = sorted(items, key=lambda it: it["key"])
     per = {t: 0 for t in order}
     out = []
     for i, it in enumerate(srt, 1):

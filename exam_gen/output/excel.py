@@ -131,7 +131,8 @@ def write(project, items_all: list[dict], out_path: Path, *, draft: bool = False
           scope: str | None = None) -> dict:
     opts = {**criteria()["defaults"], **project.meta.get("options", {})}
     scope = scope or ("passed" if draft else "approved")
-    final = numbering.number(numbering.select(items_all, batch=batch, scope=scope), opts.get("numbering", "continuous"))
+    final = numbering.number(numbering.select(items_all, batch=batch, scope=scope), opts.get("numbering", "continuous"),
+                             opts.get("order_by", "key"))
     no_by_key = {it["key"]: it for it in final}
 
     wb = load_workbook(TEMPLATE_XLSX)

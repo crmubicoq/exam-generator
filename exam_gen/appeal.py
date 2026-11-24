@@ -79,6 +79,7 @@ def search(query: str, slugs: list[str] | None = None, limit: int = 20) -> list[
         for e in hist:
             for r in e["items"]:
                 n_exp[r["key"]] = n_exp.get(r["key"], 0) + 1
+        by_key = {it["key"]: it for it in items}
         best: dict[str, tuple[float, str]] = {}
         for it in items:
             s = 1.0 if is_key and it["key"] == query.upper() else (0.0 if is_key else score(query, item_text(it)))
@@ -87,11 +88,11 @@ def search(query: str, slugs: list[str] | None = None, limit: int = 20) -> list[
         if not is_key:  # 출력 뒤에 고친 문항은 '출력 당시 내용'으로도 찾는다
             for e in hist:
                 for r in e["items"]:
-                    if r.get("snap") and r["key"] in best:
+                    # 지금 내용과 전혀 겹치지 않게 고친 문항(best에 없음)도 출력 당시 문장으로 찾는다(2026-11-24 수정)
+                    if r.get("snap") and r["key"] in by_key:
                         s = score(query, item_text(r["snap"]))
-                        if s > best[r["key"]][0]:
+                        if s > best.get(r["key"], (0, ""))[0]:
                             best[r["key"]] = (s, f"출력 당시 내용({e['at'][:10]})")
-        by_key = {it["key"]: it for it in items}
         for k, (s, where) in best.items():
             if s >= (1.0 if is_key else MIN_SCORE):
                 it = by_key[k]

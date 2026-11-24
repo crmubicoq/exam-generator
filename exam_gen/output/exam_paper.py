@@ -37,7 +37,10 @@ def _item_html(it: dict, with_answer: bool) -> str:
 def build(project, items_all: list[dict], out_path: Path, *, scope: str = "all", batch: int | None = None,
           with_answer: bool = True, by_chasi: bool = True) -> dict:
     opts = project.meta.get("options", {})
-    items = numbering.number(numbering.select(items_all, batch=batch, scope=scope), opts.get("numbering", "continuous"))
+    items = numbering.number(numbering.select(items_all, batch=batch, scope=scope), opts.get("numbering", "continuous"),
+                             opts.get("order_by", "key"))
+    if by_chasi:  # 문항ID 순이어도 차시 제목이 한 번씩만 나오게 차시끼리 묶는다(차시 안에서는 위 순서 유지)
+        items = sorted(items, key=lambda it: it.get("chasi") or 0)
     doc = pymupdf.open()
     title = project.meta.get("name", "")
     blocks = [f"<h1>{_e(title)}</h1><p class='muted'>평가문항 {len(items)}문항 · "

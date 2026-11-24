@@ -191,17 +191,19 @@ with left:
     n3.button("", icon=":material/chevron_right:", width="stretch", disabled=pos == len(keys) - 1,
               on_click=_go, args=(pos + 1,), key="nav_next", help="다음 문항")
     st.caption("승인하거나 삭제하면 다음 문항으로 자동으로 넘어갑니다.")
-    with st.expander("일괄 승인", icon=":material/done_all:"):
-        cand = [x["key"] for x in view if x["status"] == "auto_pass"]
-        st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 한꺼번에 승인합니다. 승인할 때 자동 검사를 다시 합니다.")
-        if not st.session_state.get("who"):
-            st.caption(":material/info: 위쪽 **검수자 이름**을 먼저 넣으세요.")
-        sure = st.checkbox("내용을 확인했고 일괄 승인합니다")
-        if st.button("일괄 승인", disabled=not (cand and sure and st.session_state.get("who"))):
-            r = review_ops.bulk_approve(p, cand, st.session_state["who"])
-            st.session_state["review_flash"] = f"승인 {len(r['approved'])} · 차단 {len(r['blocked'])}"
-            st.session_state["review_check_done"] = True
-            st.rerun()
+    # 일괄 승인은 '자동통과' 문항에만 적용되므로, 자동통과 문항이 있을 수 있는 대기열에서만 보인다(담당부서 2차 피드백 #2)
+    if queue in ("auto", "all"):
+        with st.expander("일괄 승인", icon=":material/done_all:"):
+            cand = [x["key"] for x in view if x["status"] == "auto_pass"]
+            st.write(f"현재 목록의 '자동통과'(경고 없음) 문항 {len(cand)}개를 한꺼번에 승인합니다. 승인할 때 자동 검사를 다시 합니다.")
+            if not st.session_state.get("who"):
+                st.caption(":material/info: 위쪽 **검수자 이름**을 먼저 넣으세요.")
+            sure = st.checkbox("내용을 확인했고 일괄 승인합니다")
+            if st.button("일괄 승인", disabled=not (cand and sure and st.session_state.get("who"))):
+                r = review_ops.bulk_approve(p, cand, st.session_state["who"])
+                st.session_state["review_flash"] = f"승인 {len(r['approved'])} · 차단 {len(r['blocked'])}"
+                st.session_state["review_check_done"] = True
+                st.rerun()
 
 # ================= 가운데: 문항 · 보기별 근거 · 승인 =================
 with mid:
@@ -250,6 +252,10 @@ with mid:
         _h = saved["hold"]
         st.info(f"**보류** — {_h.get('kind')}" + (f": {_h['memo']}" if _h.get("memo") else "")
                 + f" ({_h.get('by') or '이름 없음'}, {str(_h.get('at', ''))[:10]})", icon=":material/pause_circle:")
+    _rn = saved.get("review_note") or {}
+    if _rn.get("text"):  # 저장한 수정 메모(담당부서 2차 피드백 #1 — 다른 대기열에 다녀와도 남아 있게)
+        st.info(f"**수정 메모** — {_rn['text']}" + (f" ({str(_rn.get('at', ''))[:16].replace('T', ' ')})" if _rn.get("at") else ""),
+                icon=":material/sticky_note_2:")
     _j = saved["validation"].get("judgment")
     if _j and integrity.has_judgment(saved):
         st.success(f"**검수자 판단으로 승인** — {_j.get('by')} ({str(_j.get('at', ''))[:10]})"
@@ -420,11 +426,14 @@ with mid:
                            "is_true": bool(r["참 진술"]) if not pd.isna(r["참 진술"]) else False,
                            "trap_note": _s(r["함정 메모"])}
                           for _, r in edf.iterrows() if _s(r["대상"])]
-        # 문항마다 메모 칸을 따로 둔다 — 같은 칸을 쓰면 다음 문항으로 넘어가도 이전 메모가 남았다(피드백 #4)
+        # 문항마다 메모 칸을 따로 둔다 — 같은 칸을 쓰면 다음 문항으로 넘어가도 이전 메모가 남았다(피드백 #4).
+        # 저장한 메모는 문항에 보관하고 다시 열면 채워 보여 준다(2차 피드백 #1 — 다른 대기열에 다녀오면 사라졌다)
         _note_key = f"note_{saved['key']}"
-        note = st.text_input("수정 메모(선택)", key=_note_key)
+        note = st.text_input("수정 메모(선택)", value=(saved.get("review_note") or {}).get("text", ""), key=_note_key,
+                             help="이 문항에 남길 메모입니다. '수정 저장'을 눌러야 저장되고, 다른 대기열에 다녀와도 남아 있습니다. "
+                                  "메모만 고치고 저장하면 문항 상태는 그대로입니다.")
         if st.button("수정 저장", icon=":material/save:"):
-            st.session_state.pop(_note_key, None)  # 저장한 뒤에는 비운다
+            st.session_state.pop(_note_key, None)  # 저장한 뒤에는 문항에 보관된 메모로 다시 채운다
             if it.get("statements"):
                 correct = [s["label"] for s in it["statements"] if s.get("is_true")]
                 sets = choice_builder.build(correct, int(it["answer"]))
@@ -432,9 +441,12 @@ with mid:
                                   "is_true": x == sorted(correct, key="ㄱㄴㄷㄹ".index)} for x in sets]
                 it["slot"]["combo_true"] = len(correct)
             it["slot"]["answer"] = str(it["answer"])
-            r = review_ops.save_edit(p, it, note)
-            st.session_state["review_flash"] = ("저장했습니다 · " + ("자동 검사 탈락: " + "; ".join(r["validation"]["fails"])
-                                                            if r["validation"]["fails"] else "승인 전에 'AI 재검증'을 누르세요"))
+            r = review_ops.save_edit(p, it, note.strip())
+            if r.get("_memo_only"):
+                st.session_state["review_flash"] = "수정 메모를 저장했습니다(문항 내용은 바뀌지 않아 상태는 그대로입니다)"
+            else:
+                st.session_state["review_flash"] = ("저장했습니다 · " + ("자동 검사 탈락: " + "; ".join(r["validation"]["fails"])
+                                                                if r["validation"]["fails"] else "승인 전에 'AI 재검증'을 누르세요"))
             st.rerun()
 
     # --- 검증 상세 ---

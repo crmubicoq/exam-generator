@@ -239,7 +239,7 @@ def build(project, items_all: list[dict], out_path: Path, *, mode: str = "extrac
           batch: int | None = None, chasi: int | None = None, title: str | None = None, scope: str | None = None) -> dict:
     opts = project.meta.get("options", {})
     items = numbering.number(numbering.select(items_all, draft=draft, batch=batch, scope=scope),
-                             opts.get("numbering", "continuous"))
+                             opts.get("numbering", "continuous"), opts.get("order_by", "key"))
     if chasi is not None:
         items = [it for it in items if it.get("chasi") == chasi]
     src = pymupdf.open(project.manuscript_path)

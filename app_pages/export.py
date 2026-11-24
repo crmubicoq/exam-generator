@@ -109,6 +109,15 @@ with st.container(border=True):
         batch = st.selectbox("출력 범위", [None] + [b["batch"] for b in batches], format_func=_scope_label)
         st.caption("**회차**는 '출제 시작'을 한 번 누른 단위입니다(처음 출제 = 1회차, 이후 추가 출제마다 2, 3 …). "
                    "보통은 **전체**를 고르고, 추가 출제분만 따로 납품할 때 해당 회차를 고릅니다.")
+        # 문항 순서(담당부서 2차 피드백 #3): 엑셀·근거PDF·시험지가 같은 번호를 쓰도록 프로젝트 옵션에 저장한다
+        _opts = p.meta.get("options", {})
+        _cur = _opts.get("order_by", "key")
+        order_by = st.radio("문항 순서", list(numbering.ORDERS), index=list(numbering.ORDERS).index(_cur),
+                            format_func=numbering.ORDERS.get, horizontal=True, key="export_order")
+        if order_by != _cur:
+            p.update_meta(options={**_opts, "order_by": order_by})
+        st.caption("문항번호(D열)도 이 순서로 매깁니다. **문항ID 순**은 검수 화면의 문항ID(R열) 순서 그대로라 추가 출제분이 뒤에 모입니다. "
+                   "**양식 순**은 차시 → 유형(선다형·진위형·단답형) → 원고 쪽 순서입니다.")
 
 sel = numbering.select(items, batch=batch, scope=scope)
 if not sel:
